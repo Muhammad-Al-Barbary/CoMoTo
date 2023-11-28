@@ -1,0 +1,52 @@
+{
+    "device": 1,
+    "seed": 0,
+    "data": {
+        "student": "",
+        "teacher": "",
+        "train_valid_split": 0.2,
+        "batch_size": 8,
+        "shuffle": true
+    },
+    "transforms": {
+        "resize": [512, 512]
+    },
+    "networks": { 
+        "student": "faster_rcnn",
+        "student_parameters": {
+            "num_classes":2,
+            "backbone": "resnet18",
+            "anchors_sizes": [[32, 64, 128, 256, 512]],
+            "anchors_aspect_ratios": [[0.5, 1.0, 2.0]],
+            "align_size": 7,
+            "align_sample_ratio": 2
+        },
+        "teacher": "faster_rcnn",
+        "teacher_parameters": {
+            "num_classes":2,
+            "backbone": "resnet18",
+            "anchors_sizes": [[32, 64, 128, 256, 512]],
+            "anchors_aspect_ratios": [[0.5, 1.0, 2.0]],
+            "align_size": 7,
+            "align_sample_ratio": 2
+        },
+        "student_cp": "checkpoints/student.pt",
+        "teacher_cp": "checkpoints/teacher.pt"
+    },
+    "train": {
+        "warmup_epochs": 5,
+        "epochs": 10,
+        "distill_epoch": 1,
+        "student_optimizer": "adam",
+        "student_optimizer_parameters": {"lr": 0.01},
+        "student_scheduler":"step",
+        "student_scheduler_parameters":{"step_size":20, "gamma":0.5, "verbose":1},
+        "teacher_optimizer": "adam",
+        "teacher_optimizer_parameters": {"lr": 0.01},
+        "teacher_scheduler":"step",
+        "teacher_scheduler_parameters":{"step_size":20, "gamma":0.5, "verbose":1},
+        "distill_coeff": 3,
+        "temperature": 1,
+        "alpha": 2
+    }
+}
