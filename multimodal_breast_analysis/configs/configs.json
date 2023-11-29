@@ -1,15 +1,16 @@
 {
-    "device": 1,
+    "device": 0,
     "seed": 0,
     "data": {
-        "student": "",
-        "teacher": "",
-        "train_valid_split": 0.2,
-        "batch_size": 8,
+        "student_name": "penn_fudan",
+        "teacher_name": "penn_fudan",
+        "student_path": "C:/Education/Extracurricular/Projects/Multimodal/datasets/PennFudanPed",
+        "teacher_path": "C:/Education/Extracurricular/Projects/Multimodal/datasets/PennFudanPed",
+        "test_split": 0.2,
+        "batch_size": 2,
         "shuffle": true
     },
     "transforms": {
-        "resize": [512, 512]
     },
     "networks": { 
         "student": "faster_rcnn",

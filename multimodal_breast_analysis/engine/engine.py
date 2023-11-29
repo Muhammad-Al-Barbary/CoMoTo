@@ -1,6 +1,10 @@
 from multimodal_breast_analysis.models.faster_rcnn import faster_rcnn
 from multimodal_breast_analysis.models.unet import UNet as unet
 from multimodal_breast_analysis.configs.configs import config
+from multimodal_breast_analysis.data.dataloader import DataLoader
+from multimodal_breast_analysis.data.transforms import train_transforms, test_transforms
+from multimodal_breast_analysis.data.datasets import penn_fudan
+from multimodal_breast_analysis.engine.utils import prepare_batch
 
 import wandb
 import torch
@@ -15,11 +19,11 @@ class Engine:
         self.student = self._get_model(
             config.networks["student"],
             config.networks["student_parameters"]
-            )
+            ).to(self.device)
         self.teacher = self._get_model(
             config.networks["teacher"],
             config.networks["teacher_parameters"]
-            )    
+            ).to(self.device)    
         self.student_optimizer = self._get_optimizer(
             config.train["student_optimizer"]
         )(self.student.parameters(),**config.train["student_optimizer_parameters"])
@@ -32,18 +36,52 @@ class Engine:
         self.teacher_scheduler = self._get_scheduler(
             config.train["teacher_scheduler"],
         )(self.teacher_optimizer,**config.train["teacher_scheduler_parameters"])
-        self.student_trainloader = None
-        self.student_testloader = None
-        self.teacher_trainloader = None
-        self.teacher_testloader = None
 
+
+        student_loader = DataLoader(
+                            data=self._get_data(config.data["student_name"])(config.data["student_path"]),
+                            test_split=config.data['test_split'],
+                            seed=config.seed
+                            )
+        teacher_loader = DataLoader(
+                            data=self._get_data(config.data["teacher_name"])(config.data["teacher_path"]),
+                            test_split=config.data['test_split'],
+                            seed=config.seed
+                            )
+        self.student_trainloader = student_loader.trainloader(
+                                        train_transforms(config.data["student_name"]), 
+                                        batch_size=config.data["batch_size"], 
+                                        shuffle=config.data["shuffle"]
+                                        )
+        self.student_testloader = student_loader.testloader(
+                                        test_transforms(config.data["student_name"]), 
+                                        batch_size=config.data["batch_size"], 
+                                        shuffle=False
+                                        )
+        self.teacher_trainloader = teacher_loader.trainloader(
+                                        train_transforms(config.data["teacher_name"]), 
+                                        batch_size=config.data["batch_size"], 
+                                        shuffle=config.data["shuffle"]
+                                        )
+        self.teacher_testloader = teacher_loader.testloader(
+                                        test_transforms(config.data["teacher_name"]), 
+                                        batch_size=config.data["batch_size"], 
+                                        shuffle=False
+                                        )
+
+
+    def _get_data(self, dataset_name):
+        data = {
+             "penn_fudan": penn_fudan,
+             } #
+        return data[dataset_name]
 
     def _get_model(self, name, parameters):
         models = {
             "faster_rcnn": faster_rcnn,
             "unet": unet
         }
-        return models[name][parameters]
+        return models[name](parameters)
     
 
     def _get_optimizer(self, name):
@@ -80,7 +118,7 @@ class Engine:
         torch.save(checkpoint, path=path)
 
 
-    def load_checkpoint(self, mode, path):
+    def load(self, mode, path=None):
         if mode == "teacher":
             if path is None:
                 path = config.networks["teacher_cp"]
@@ -104,9 +142,10 @@ class Engine:
             self.teacher.train()
             for iteration, batch in enumerate(self.teacher_trainloader):
                 print(f"   iteration {iteration+1}/{len(self.teacher_trainloader)}")
+                image, target = prepare_batch(batch, self.device)
                 loss = self.teacher(
-                            batch['image'].to(self.device),
-                            batch['label'].to(self.device)
+                            image,
+                            target
                             )
                 loss = sum(sample_loss for sample_loss in loss.values())
                 self.optimizer_ct.zero_grad()
@@ -173,9 +212,10 @@ class Engine:
             self.teacher.eval()
             for iteration, student_batch in enumerate(self.student_trainloader):
                 print(f"     iteration {iteration+1}/{len(self.student_trainloader)}")
+                student_image, student_target = prepare_batch(student_batch, self.device)
                 base_loss = self.student(
-                                    student_batch['image'].to(self.device),
-                                    student_batch['label'].to(self.device)
+                                    student_image,
+                                    student_target
                                     )
                 base_loss = sum(sample_loss for sample_loss in base_loss.values())
                 if epoch >= distill_epoch:
@@ -186,7 +226,8 @@ class Engine:
                         teacher_batch = next(teacher_iter)
                         # if (len(teacher_batch['image']) != len(student_batch['image'])):
                         #     continue
-                    self.teacher(teacher_batch['image'].to(self.device))
+                    teacher_image, _ = prepare_batch(teacher_batch, self.device)
+                    self.teacher(teacher_image)
                     teacher_features = self.features['teacher']
                     student_features = self.features['student']
                     teacher_features = self.flat(teacher_features).mean(dim = 0)
