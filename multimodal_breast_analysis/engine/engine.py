@@ -77,12 +77,13 @@ class Engine:
                                                                 "multimodal_breast_analysis/data/transforms.py", 
                                                                 config.data["teacher_name"]
                                                                 )
-        wandb.log({
-                "student_train_transforms":student_train_logs,
-                "student_test_transforms":student_test_logs,
-                "teacher_train_transforms":teacher_train_logs,
-                "teacher_test_transforms":teacher_test_logs,
-                   })
+        transform_logs = wandb.Table(
+                          columns=["Teacher", "Student"], 
+                          data=[[teacher_train_logs,student_train_logs], [teacher_test_logs,student_test_logs]]
+                          )
+
+        wandb.log({"Transforms": transform_logs})
+
 
     def _get_data(self, dataset_name):
         data = {
@@ -166,7 +167,7 @@ class Engine:
                 loss.backward()
                 self.teacher_optimizer.step()
                 epoch_loss += loss.item()
-                print("Loss:", loss.item())
+                print("   Loss:", loss.item())
                 wandb.log({"Warmup Loss": loss.item()})
             epoch_loss = epoch_loss / len(self.teacher_trainloader)
             print("Warmup Epoch Loss", epoch_loss)            
