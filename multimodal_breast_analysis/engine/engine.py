@@ -4,7 +4,7 @@ from multimodal_breast_analysis.configs.configs import config
 from multimodal_breast_analysis.data.dataloader import DataLoader
 from multimodal_breast_analysis.data.transforms import train_transforms, test_transforms
 from multimodal_breast_analysis.data.datasets import penn_fudan
-from multimodal_breast_analysis.engine.utils import prepare_batch
+from multimodal_breast_analysis.engine.utils import prepare_batch, log_transforms
 
 import wandb
 import torch
@@ -69,6 +69,20 @@ class Engine:
                                         shuffle=False
                                         )
 
+        student_train_logs, student_test_logs = log_transforms(
+                                                                "multimodal_breast_analysis/data/transforms.py", 
+                                                                config.data["student_name"]
+                                                                )
+        teacher_train_logs, teacher_test_logs = log_transforms(
+                                                                "multimodal_breast_analysis/data/transforms.py", 
+                                                                config.data["teacher_name"]
+                                                                )
+        wandb.log({
+                "student_train_transforms":student_train_logs,
+                "student_test_transforms":student_test_logs,
+                "teacher_train_transforms":teacher_train_logs,
+                "teacher_test_transforms":teacher_test_logs,
+                   })
 
     def _get_data(self, dataset_name):
         data = {
