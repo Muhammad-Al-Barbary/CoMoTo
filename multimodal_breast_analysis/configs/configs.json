@@ -4,13 +4,14 @@
     "data": {
         "student_name": "penn_fudan",
         "teacher_name": "penn_fudan",
-        "student_path": "C:/Education/Extracurricular/Projects/Multimodal/datasets/PennFudanPed",
-        "teacher_path": "C:/Education/Extracurricular/Projects/Multimodal/datasets/PennFudanPed",
+        "student_path": "PennFudanPed",
+        "teacher_path": "PennFudanPed",
         "test_split": 0.2,
         "batch_size": 2,
         "shuffle": true
     },
     "transforms": {
+      "size": [512,512]
     },
     "networks": { 
         "student": "faster_rcnn",
@@ -35,17 +36,17 @@
         "teacher_cp": "checkpoints/teacher.pt"
     },
     "train": {
-        "warmup_epochs": 5,
-        "epochs": 10,
-        "distill_epoch": 1,
+        "warmup_epochs": 2,
+        "epochs": 2,
+        "distill_epoch": 0,
         "student_optimizer": "adam",
         "student_optimizer_parameters": {"lr": 0.01},
         "student_scheduler":"step",
-        "student_scheduler_parameters":{"step_size":20, "gamma":0.5, "verbose":1},
+        "student_scheduler_parameters":{"step_size":20, "gamma":0.5, "verbose":0},
         "teacher_optimizer": "adam",
         "teacher_optimizer_parameters": {"lr": 0.01},
         "teacher_scheduler":"step",
-        "teacher_scheduler_parameters":{"step_size":20, "gamma":0.5, "verbose":1},
+        "teacher_scheduler_parameters":{"step_size":20, "gamma":0.5, "verbose":0},
         "distill_coeff": 3,
         "temperature": 1,
         "alpha": 2

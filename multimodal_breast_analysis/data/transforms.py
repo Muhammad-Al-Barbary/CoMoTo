@@ -12,7 +12,8 @@ from monai.transforms import (
     RandScaleIntensityd,
     RandShiftIntensityd,
     Rotate90d,
-    Flipd
+    Flipd,
+    Resized
 )
 from monai.apps.detection.transforms.dictionary import (
     AffineBoxToImageCoordinated,
@@ -30,11 +31,13 @@ from monai.apps.detection.transforms.dictionary import (
 )
 import torch
 
+from multimodal_breast_analysis.configs.configs import config
 
 
 image_key = "image"
 box_key = "boxes"
 label_key = "labels"
+resize = config.transforms['size']
 
 def train_transforms(dataset_name):
     transforms = {
@@ -76,12 +79,12 @@ def train_transforms(dataset_name):
                                     #     padding_mode="constant",
                                     #     keep_size=True,
                                     # ),
-                                    # ClipBoxToImaged(
-                                    #     box_keys=box_key,
-                                    #     label_keys=[label_key],
-                                    #     box_ref_image_keys=image_key,
-                                    #     remove_empty=True,
-                                    # ),
+                                    ClipBoxToImaged(
+                                        box_keys=box_key,
+                                        label_keys=[label_key],
+                                        box_ref_image_keys=image_key,
+                                        remove_empty=True,
+                                    ),
                                     # RandFlipBoxd(
                                     #     image_keys=[image_key],
                                     #     box_keys=[box_key],
@@ -111,14 +114,19 @@ def train_transforms(dataset_name):
                                     #     max_k=3,
                                     #     spatial_axes=(0, 1),
                                     # ),
-                                    # BoxToMaskd(
-                                    #     box_keys=[box_key],
-                                    #     label_keys=[label_key],
-                                    #     box_mask_keys=["box_mask"],
-                                    #     box_ref_image_keys=image_key,
-                                    #     min_fg_label=0,
-                                    #     ellipse_mask=True,
-                                    # ),
+                                    BoxToMaskd(
+                                        box_keys=[box_key],
+                                        label_keys=[label_key],
+                                        box_mask_keys=["box_mask"],
+                                        box_ref_image_keys=image_key,
+                                        min_fg_label=0,
+                                        ellipse_mask=True,
+                                    ),
+                                    Resized(
+                                        keys=[image_key, "box_mask"],
+                                        spatial_size=resize,
+                                        mode=('bilinear','nearest')
+                                    ),
                                     # RandRotated(
                                     #     keys=[image_key, "box_mask"],
                                     #     mode=["nearest", "nearest"],
@@ -129,12 +137,12 @@ def train_transforms(dataset_name):
                                     #     keep_size=True,
                                     #     padding_mode="zeros",
                                     # ),
-                                    # MaskToBoxd(
-                                    #     box_keys=[box_key],
-                                    #     label_keys=[label_key],
-                                    #     box_mask_keys=["box_mask"],
-                                    #     min_fg_label=0,
-                                    # ),
+                                    MaskToBoxd(
+                                        box_keys=[box_key],
+                                        label_keys=[label_key],
+                                        box_mask_keys=["box_mask"],
+                                        min_fg_label=0,
+                                    ),
                                     # DeleteItemsd(keys=["box_mask"]),
                                     # RandGaussianNoised(keys=[image_key], prob=0.1, mean=0, std=0.1),
                                     # RandGaussianSmoothd(

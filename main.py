@@ -4,7 +4,7 @@ def main():
     engine.warmup()
     engine.train()
     engine.load("student")
-    engine.test()
+    engine.test("student")
 
 
 

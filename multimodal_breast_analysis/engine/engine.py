@@ -115,7 +115,7 @@ class Engine:
                 "network": self.student.state_dict(),
                 "optimizer": self.student_optimizer.state_dict(),
                 }            
-        torch.save(checkpoint, path=path)
+        torch.save(checkpoint, path)
 
 
     def load(self, mode, path=None):
@@ -148,16 +148,17 @@ class Engine:
                             target
                             )
                 loss = sum(sample_loss for sample_loss in loss.values())
-                self.optimizer_ct.zero_grad()
+                self.teacher_optimizer.zero_grad()
                 loss.backward()
-                self.optimizer.step()
+                self.teacher_optimizer.step()
                 epoch_loss += loss.item()
+                print("Loss:", loss.item())
+                wandb.log({"Warmup Loss": loss.item()})
             epoch_loss = epoch_loss / len(self.teacher_trainloader)
-            print("Warmup Loss:", epoch_loss)            
+            print("Warmup Epoch Loss", epoch_loss)            
             current_metric = self.test('teacher')
             print("Warmup Metric:", current_metric)
             wandb.log({
-                "teacher training loss": epoch_loss, 
                 "teacher testing metric": current_metric
                 })
             if current_metric >= best_metric:
@@ -166,7 +167,7 @@ class Engine:
                 self.save('teacher')
 
 
-    def distill_loss(student_outputs, teacher_outputs):
+    def distill_loss(self, student_outputs, teacher_outputs):
         T, alpha = config.train["temperature"], config.train["alpha"]
         return KLDivLoss(reduction='batchmean')(
             log_softmax(student_outputs/T, dim=1),
@@ -184,8 +185,10 @@ class Engine:
         self.teacher.backbone.register_forward_hook(get_features('teacher'))
         student_batch = next(iter(self.student_trainloader))
         teacher_batch = next(iter(self.teacher_trainloader))
-        self.student(student_batch['image'].to(self.device))
-        self.teacher(teacher_batch['image'].to(self.device))
+        student_image, student_target = prepare_batch(student_batch, self.device)
+        teacher_image, teacher_target = prepare_batch(teacher_batch, self.device)
+        self.student(student_image, student_target)
+        self.teacher(teacher_image, teacher_target)
         student_features = self.features['student']
         teacher_features = self.features['teacher']
         self.flat = Flatten(start_dim=2).to(self.device)
@@ -203,6 +206,7 @@ class Engine:
         distill_coeff = config.train["distill_coeff"]
         distill_loss = torch.tensor(0)
         best_metric = 0 
+        teacher_iter = iter(self.teacher_trainloader)
         for epoch in range(epochs):
             print(f"\nEpoch {epoch+1}/{epochs}\n-------------------------------")
             epoch_total_loss = 0
@@ -232,8 +236,8 @@ class Engine:
                     student_features = self.features['student']
                     teacher_features = self.flat(teacher_features).mean(dim = 0)
                     student_features = self.project(self.flat(student_features).mean(dim = 0))
-                    distill_loss = self.distill_loss(student_features, teacher_features)
-                total_loss = base_loss + distill_coeff*distill_loss
+                    distill_loss = distill_coeff * self.distill_loss(student_features, teacher_features)
+                total_loss = base_loss + distill_loss
                 self.student_optimizer.zero_grad()
                 total_loss.backward()
                 self.student_optimizer.step()
@@ -245,6 +249,11 @@ class Engine:
                     "Base:", base_loss.item(), 
                     "Distill:", distill_loss.item()
                     )
+                wandb.log({
+                    "student total training loss": total_loss.item(),
+                    "student base training loss": base_loss.item(),
+                    "student distill training loss": distill_loss.item(), 
+                })
             epoch_total_loss = epoch_total_loss / len(self.student_trainloader)
             epoch_base_loss = epoch_base_loss / len(self.student_trainloader)
             epoch_distill_loss = epoch_distill_loss / len(self.student_trainloader)
@@ -256,9 +265,6 @@ class Engine:
             current_metric = self.test('student')
             print("Metric:", current_metric)
             wandb.log({
-                "student total training loss": epoch_total_loss,
-                "student base training loss": epoch_base_loss,
-                "student distill training loss": epoch_distill_loss, 
                 "student testing metric": current_metric
                 })
             if current_metric >= best_metric:
@@ -274,7 +280,7 @@ class Engine:
         elif mode == "teacher":
             dataloader = self.teacher_testloader
             network = self.teacher
-        pass
+        return  0 # TODO
 
 
     def predict(self):
