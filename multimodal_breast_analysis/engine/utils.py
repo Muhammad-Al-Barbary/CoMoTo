@@ -5,6 +5,14 @@ def prepare_batch(batch, device):
   targets = [{"boxes":batch[i]["boxes"].to(device), "labels":batch[i]["labels"].to(device)} for i in range(len(batch))]
   return image, targets
 
+def average_dicts(list_of_dicts):
+  num_dicts = len(list_of_dicts)
+  avg_dict = {}
+  for d in list_of_dicts:
+      for key, value in d.items():
+          avg_dict[key] = avg_dict.get(key, 0) + value / num_dicts
+  return avg_dict
+  
 
 def log_transforms(file_path, dataset_name):
     train_list, test_list = ["TRAIN:\n"],["TEST:\n"]

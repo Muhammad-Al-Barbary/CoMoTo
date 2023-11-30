@@ -4,14 +4,19 @@ from multimodal_breast_analysis.configs.configs import config
 from multimodal_breast_analysis.data.dataloader import DataLoader
 from multimodal_breast_analysis.data.transforms import train_transforms, test_transforms
 from multimodal_breast_analysis.data.datasets import penn_fudan
-from multimodal_breast_analysis.engine.utils import prepare_batch, log_transforms
+from multimodal_breast_analysis.engine.utils import prepare_batch, log_transforms, average_dicts
+from multimodal_breast_analysis.engine.visualization import visualize_batch
 
 import wandb
+from tqdm import tqdm
 import torch
 from torch.optim import Adam, SGD
 from torch.optim.lr_scheduler import StepLR, CyclicLR
 from torch.nn import KLDivLoss, Flatten, Linear
 from torch.nn.functional import softmax, log_softmax
+from monai.data.box_utils import box_iou
+from monai.apps.detection.metrics.coco import COCOMetric
+from monai.apps.detection.metrics.matching import matching_batch
 
 class Engine:
     def __init__(self):
@@ -154,9 +159,8 @@ class Engine:
         for epoch in range(warmup_epochs):
             print(f"\nWarmup Epoch {epoch+1}/{warmup_epochs}\n-------------------------------")
             epoch_loss = 0
-            self.teacher.train()
-            for iteration, batch in enumerate(self.teacher_trainloader):
-                print(f"   iteration {iteration+1}/{len(self.teacher_trainloader)}")
+            for batch in tqdm(self.teacher_trainloader, unit="iter"):
+                self.teacher.train()
                 image, target = prepare_batch(batch, self.device)
                 loss = self.teacher(
                             image,
@@ -167,17 +171,18 @@ class Engine:
                 loss.backward()
                 self.teacher_optimizer.step()
                 epoch_loss += loss.item()
-                print("   Loss:", loss.item())
-                wandb.log({"Warmup Loss": loss.item()})
+                # print("   Loss:", loss.item())
+                # wandb.log({"Warmup Loss": loss.item()})
+                visualize_batch(self.teacher, image, target, "pedestrian")
             epoch_loss = epoch_loss / len(self.teacher_trainloader)
-            print("Warmup Epoch Loss", epoch_loss)            
-            current_metric = self.test('teacher')
-            print("Warmup Metric:", current_metric)
-            wandb.log({
-                "teacher testing metric": current_metric
-                })
-            if current_metric >= best_metric:
-                best_metric = current_metric
+            current_metrics = self.test('teacher')
+            print("teacher_loss", epoch_loss)   
+            print(current_metrics)
+            # for logging in a single dictionary
+            current_metrics["teacher_loss"] = epoch_loss
+            wandb.log(current_metrics)
+            if True:#current_metric >= best_metric:
+                #best_metric = current_metric
                 print('saving teacher checkpoint')
                 self.save('teacher')
 
@@ -229,8 +234,7 @@ class Engine:
             epoch_distill_loss = 0
             self.student.train()
             self.teacher.eval()
-            for iteration, student_batch in enumerate(self.student_trainloader):
-                print(f"     iteration {iteration+1}/{len(self.student_trainloader)}")
+            for student_batch in tqdm(self.student_trainloader, unit="iter"):
                 student_image, student_target = prepare_batch(student_batch, self.device)
                 base_loss = self.student(
                                     student_image,
@@ -259,31 +263,33 @@ class Engine:
                 epoch_total_loss += total_loss.item()
                 epoch_base_loss += base_loss.item()
                 epoch_distill_loss += distill_loss.item()
-                print(
-                    "    Total Loss:", total_loss.item(), 
-                    "Base:", base_loss.item(), 
-                    "Distill:", distill_loss.item()
-                    )
-                wandb.log({
-                    "student total training loss": total_loss.item(),
-                    "student base training loss": base_loss.item(),
-                    "student distill training loss": distill_loss.item(), 
-                })
+                # print(
+                #     "    Total Loss:", total_loss.item(), 
+                #     "Base:", base_loss.item(), 
+                #     "Distill:", distill_loss.item()
+                #     )
+                # wandb.log({
+                #     "student total training loss": total_loss.item(),
+                #     "student base training loss": base_loss.item(),
+                #     "student distill training loss": distill_loss.item(), 
+                # })
             epoch_total_loss = epoch_total_loss / len(self.student_trainloader)
             epoch_base_loss = epoch_base_loss / len(self.student_trainloader)
             epoch_distill_loss = epoch_distill_loss / len(self.student_trainloader)
+            current_metrics = self.test('student')
             print(
-                "Total Loss:", epoch_total_loss, 
-                "Base:", epoch_base_loss, 
-                "Distill:", epoch_distill_loss
+                "student_total_loss:", epoch_total_loss, 
+                "student_base_loss:", epoch_base_loss, 
+                "student_distill_loss:", epoch_distill_loss
                 )
-            current_metric = self.test('student')
-            print("Metric:", current_metric)
-            wandb.log({
-                "student testing metric": current_metric
-                })
-            if current_metric >= best_metric:
-                best_metric = current_metric
+            print(current_metrics)
+            # for logging in a single dictionary
+            current_metrics["student_total_loss"] = epoch_total_loss
+            current_metrics["student_base_loss"] = epoch_base_loss
+            current_metrics["student_distill_loss"] = epoch_distill_loss
+            wandb.log(current_metrics)
+            if True:#current_metric >= best_metric:
+                #best_metric = current_metric
                 print('saving student checkpoint')
                 self.save('student')
 
@@ -292,10 +298,39 @@ class Engine:
         if mode == "student":
             dataloader = self.student_testloader
             network = self.student
+            classes = config.networks["student_parameters"]["classes_names"]
         elif mode == "teacher":
             dataloader = self.teacher_testloader
             network = self.teacher
-        return  0 # TODO
+            classes = config.networks["teacher_parameters"]["classes_names"]
+        print("Testing", mode)
+        coco_metric = COCOMetric(
+            classes=classes,
+        )
+        network.eval()
+        with torch.no_grad():
+          all_dicts = []
+          for batch in tqdm(dataloader, unit="iter"):
+            images, targets = prepare_batch(batch, self.device)
+            # return images, targets
+            predictions = network(images)
+            results_metric = matching_batch(
+                iou_fn=box_iou,
+                iou_thresholds=coco_metric.iou_thresholds,
+                pred_boxes=[sample["boxes"].cpu().numpy() for sample in predictions],
+                pred_classes=[sample["labels"].cpu().numpy() for sample in predictions],
+                pred_scores=[sample["scores"].cpu().numpy() for sample in predictions],
+                gt_boxes=[sample["boxes"].cpu().numpy() for sample in targets],
+                gt_classes=[sample["labels"].cpu().numpy() for sample in targets],
+            )
+            metric_dict = coco_metric(results_metric)[0]
+            new_dict = {}
+            for k in metric_dict:
+              for c in classes[1:]: #remove background
+                if c in k: #not a background key
+                  new_dict[mode+": "+k] = metric_dict[k]
+            all_dicts.append(new_dict)
+        return average_dicts(all_dicts)
 
 
     def predict(self):

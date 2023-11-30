@@ -7,7 +7,7 @@
         "student_path": "PennFudanPed",
         "teacher_path": "PennFudanPed",
         "test_split": 0.2,
-        "batch_size": 2,
+        "batch_size": 8,
         "shuffle": true
     },
     "transforms": {
@@ -17,7 +17,8 @@
         "student": "faster_rcnn",
         "student_parameters": {
             "num_classes":2,
-            "backbone": "resnet18",
+            "classes_names":["background","pedestrian"],
+            "backbone": "resnet50",
             "anchors_sizes": [[32, 64, 128, 256, 512]],
             "anchors_aspect_ratios": [[0.5, 1.0, 2.0]],
             "align_size": 7,
@@ -26,7 +27,8 @@
         "teacher": "faster_rcnn",
         "teacher_parameters": {
             "num_classes":2,
-            "backbone": "resnet18",
+            "classes_names":["background","pedestrian"],
+            "backbone": "resnet50",
             "anchors_sizes": [[32, 64, 128, 256, 512]],
             "anchors_aspect_ratios": [[0.5, 1.0, 2.0]],
             "align_size": 7,
@@ -36,15 +38,15 @@
         "teacher_cp": "checkpoints/teacher.pt"
     },
     "train": {
-        "warmup_epochs": 2,
-        "epochs": 2,
+        "warmup_epochs": 30,
+        "epochs": 30,
         "distill_epoch": 0,
         "student_optimizer": "adam",
-        "student_optimizer_parameters": {"lr": 0.01},
+        "student_optimizer_parameters": {"lr": 0.0001},
         "student_scheduler":"step",
         "student_scheduler_parameters":{"step_size":20, "gamma":0.5, "verbose":0},
         "teacher_optimizer": "adam",
-        "teacher_optimizer_parameters": {"lr": 0.01},
+        "teacher_optimizer_parameters": {"lr": 0.0001},
         "teacher_scheduler":"step",
         "teacher_scheduler_parameters":{"step_size":20, "gamma":0.5, "verbose":0},
         "distill_coeff": 3,

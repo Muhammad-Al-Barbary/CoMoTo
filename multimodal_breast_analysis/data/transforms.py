@@ -44,15 +44,13 @@ def train_transforms(dataset_name):
                     "penn_fudan": Compose([
                                     LoadImaged(keys=[image_key], meta_key_postfix="meta_dict"),
                                     EnsureChannelFirstd(keys=[image_key]),
-                                    Rotate90d(keys=image_key, k=3),
-                                    Flipd(image_key, 1),
-                                    # EnsureTyped(keys=[image_key], dtype=torch.float32),
-                                    # EnsureTyped(keys=[label_key,box_key], dtype=torch.long),
+                                    EnsureTyped(keys=[image_key], dtype=torch.float32),
+                                    EnsureTyped(keys=[label_key,box_key], dtype=torch.long),
                                     # StandardizeEmptyBoxd(box_keys=[box_key], box_ref_image_keys=image_key),
                                     # Orientationd(keys=[image_key], axcodes="RAS"),
                                     # intensity_transform,
-                                    # EnsureTyped(keys=[image_key], dtype=torch.float16),
-                                    # ConvertBoxToStandardModed(box_keys=[box_key], ),
+                                    EnsureTyped(keys=[image_key], dtype=torch.float16),
+                                    # ConvertBoxToStandardModed(box_keys=[box_key], mode="xxyy"),
                                     # AffineBoxToImageCoordinated(
                                     #     box_keys=[box_key],
                                     #     box_ref_image_keys=image_key,
@@ -79,12 +77,12 @@ def train_transforms(dataset_name):
                                     #     padding_mode="constant",
                                     #     keep_size=True,
                                     # ),
-                                    ClipBoxToImaged(
-                                        box_keys=box_key,
-                                        label_keys=[label_key],
-                                        box_ref_image_keys=image_key,
-                                        remove_empty=True,
-                                    ),
+                                    # ClipBoxToImaged(
+                                    #     box_keys=box_key,
+                                    #     label_keys=[label_key],
+                                    #     box_ref_image_keys=image_key,
+                                    #     remove_empty=True,
+                                    # ),
                                     # RandFlipBoxd(
                                     #     image_keys=[image_key],
                                     #     box_keys=[box_key],
@@ -120,7 +118,7 @@ def train_transforms(dataset_name):
                                         box_mask_keys=["box_mask"],
                                         box_ref_image_keys=image_key,
                                         min_fg_label=0,
-                                        ellipse_mask=True,
+                                        ellipse_mask=False,
                                     ),
                                     Resized(
                                         keys=[image_key, "box_mask"],
@@ -155,8 +153,11 @@ def train_transforms(dataset_name):
                                     # RandScaleIntensityd(keys=[image_key], prob=0.15, factors=0.25),
                                     # RandShiftIntensityd(keys=[image_key], prob=0.15, offsets=0.1),
                                     # RandAdjustContrastd(keys=[image_key], prob=0.3, gamma=(0.7, 1.5)),
-                                    # EnsureTyped(keys=[image_key, box_key], dtype=compute_dtype),
-                                    # EnsureTyped(keys=[label_key], dtype=int),
+                                   
+                                    Rotate90d(keys=image_key, k=3),
+                                    Flipd(image_key, 1),
+                                    EnsureTyped(keys=[image_key, box_key], dtype=torch.float32),
+                                    EnsureTyped(keys=[label_key], dtype=int),
                                     ])
                 }
     return transforms[dataset_name]
@@ -166,22 +167,32 @@ def test_transforms(dataset_name):
                     "penn_fudan": Compose([
                                     LoadImaged(keys=[image_key], meta_key_postfix="meta_dict"),
                                     EnsureChannelFirstd(keys=[image_key]),
+                                    EnsureTyped(keys=[image_key], dtype=torch.float32),
+                                    EnsureTyped(keys=[label_key,box_key], dtype=torch.long),
+                                    EnsureTyped(keys=[image_key], dtype=torch.float16),
+                                    BoxToMaskd(
+                                        box_keys=[box_key],
+                                        label_keys=[label_key],
+                                        box_mask_keys=["box_mask"],
+                                        box_ref_image_keys=image_key,
+                                        min_fg_label=0,
+                                        ellipse_mask=False,
+                                    ),
+                                    Resized(
+                                        keys=[image_key, "box_mask"],
+                                        spatial_size=resize,
+                                        mode=('bilinear','nearest')
+                                    ),
+                                    MaskToBoxd(
+                                        box_keys=[box_key],
+                                        label_keys=[label_key],
+                                        box_mask_keys=["box_mask"],
+                                        min_fg_label=0,
+                                    ),
                                     Rotate90d(keys=image_key, k=3),
                                     Flipd(image_key, 1),
-                                    # EnsureTyped(keys=[image_key, box_key], dtype=torch.float32),
-                                    # EnsureTyped(keys=[label_key], dtype=torch.long),
-                                    # StandardizeEmptyBoxd(box_keys=[box_key], box_ref_image_keys=image_key),
-                                    # Orientationd(keys=[image_key], axcodes="RAS"),
-                                    # intensity_transform,
-                                    # ConvertBoxToStandardModed(box_keys=[box_key], mode=gt_box_mode),
-                                    # AffineBoxToImageCoordinated(
-                                    #     box_keys=[box_key],
-                                    #     box_ref_image_keys=image_key,
-                                    #     image_meta_key_postfix="meta_dict",
-                                    #     affine_lps_to_ras=affine_lps_to_ras,
-                                    # ),
-                                    # EnsureTyped(keys=[image_key, box_key], dtype=compute_dtype),
-                                    # EnsureTyped(keys=label_key, dtype=torch.long),
-                                ])
+                                    EnsureTyped(keys=[image_key, box_key], dtype=torch.float32),
+                                    EnsureTyped(keys=[label_key], dtype=int),
+                                    ])
                 }
     return transforms[dataset_name]
