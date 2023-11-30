@@ -8,6 +8,7 @@ from multimodal_breast_analysis.engine.utils import prepare_batch, log_transform
 from multimodal_breast_analysis.engine.visualization import visualize_batch
 
 import wandb
+import logging
 from tqdm import tqdm
 import torch
 from torch.optim import Adam, SGD
@@ -173,7 +174,7 @@ class Engine:
                 epoch_loss += loss.item()
                 # print("   Loss:", loss.item())
                 # wandb.log({"Warmup Loss": loss.item()})
-                visualize_batch(self.teacher, image, target, "pedestrian")
+                # visualize_batch(self.teacher, image, target, "pedestrian")
             epoch_loss = epoch_loss / len(self.teacher_trainloader)
             current_metrics = self.test('teacher')
             print("teacher_loss", epoch_loss)   
@@ -312,7 +313,6 @@ class Engine:
           all_dicts = []
           for batch in tqdm(dataloader, unit="iter"):
             images, targets = prepare_batch(batch, self.device)
-            # return images, targets
             predictions = network(images)
             results_metric = matching_batch(
                 iou_fn=box_iou,
@@ -323,13 +323,16 @@ class Engine:
                 gt_boxes=[sample["boxes"].cpu().numpy() for sample in targets],
                 gt_classes=[sample["labels"].cpu().numpy() for sample in targets],
             )
+            logging.getLogger().disabled = True #disable logging warning for empty background
             metric_dict = coco_metric(results_metric)[0]
+            logging.getLogger().disabled = False
             new_dict = {}
             for k in metric_dict:
               for c in classes[1:]: #remove background
                 if c in k: #not a background key
                   new_dict[mode+": "+k] = metric_dict[k]
             all_dicts.append(new_dict)
+          visualize_batch(network, images, targets, classes[1])
         return average_dicts(all_dicts)
 
 
