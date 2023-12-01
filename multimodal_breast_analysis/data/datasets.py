@@ -53,5 +53,4 @@ def omidb(img_dir):
                 "labels": torch.tensor([1])
                 }         
         dataset.append(data)
-    print(len(dataset), failed_counter)
     return dataset
