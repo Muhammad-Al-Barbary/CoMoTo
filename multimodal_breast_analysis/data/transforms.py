@@ -158,6 +158,37 @@ def train_transforms(dataset_name):
                                     Flipd(image_key, 1),
                                     EnsureTyped(keys=[image_key, box_key], dtype=torch.float32),
                                     EnsureTyped(keys=[label_key], dtype=int),
+                                    ]),
+
+                    "omidb": Compose([
+                                    LoadImaged(keys=[image_key], meta_key_postfix="meta_dict"),
+                                    EnsureChannelFirstd(keys=[image_key]),
+                                    EnsureTyped(keys=[image_key], dtype=torch.float32),
+                                    EnsureTyped(keys=[label_key,box_key], dtype=torch.long),
+                                    EnsureTyped(keys=[image_key], dtype=torch.float16),
+                                    BoxToMaskd(
+                                        box_keys=[box_key],
+                                        label_keys=[label_key],
+                                        box_mask_keys=["box_mask"],
+                                        box_ref_image_keys=image_key,
+                                        min_fg_label=0,
+                                        ellipse_mask=False,
+                                    ),
+                                    Resized(
+                                        keys=[image_key, "box_mask"],
+                                        spatial_size=resize,
+                                        mode=('bilinear','nearest')
+                                    ),
+                                    MaskToBoxd(
+                                        box_keys=[box_key],
+                                        label_keys=[label_key],
+                                        box_mask_keys=["box_mask"],
+                                        min_fg_label=0,
+                                    ),
+                                    Rotate90d(keys=image_key, k=3),
+                                    Flipd(image_key, 1),
+                                    EnsureTyped(keys=[image_key, box_key], dtype=torch.float32),
+                                    EnsureTyped(keys=[label_key], dtype=int),
                                     ])
                 }
     return transforms[dataset_name]
@@ -165,6 +196,37 @@ def train_transforms(dataset_name):
 def test_transforms(dataset_name):
     transforms = {
                     "penn_fudan": Compose([
+                                    LoadImaged(keys=[image_key], meta_key_postfix="meta_dict"),
+                                    EnsureChannelFirstd(keys=[image_key]),
+                                    EnsureTyped(keys=[image_key], dtype=torch.float32),
+                                    EnsureTyped(keys=[label_key,box_key], dtype=torch.long),
+                                    EnsureTyped(keys=[image_key], dtype=torch.float16),
+                                    BoxToMaskd(
+                                        box_keys=[box_key],
+                                        label_keys=[label_key],
+                                        box_mask_keys=["box_mask"],
+                                        box_ref_image_keys=image_key,
+                                        min_fg_label=0,
+                                        ellipse_mask=False,
+                                    ),
+                                    Resized(
+                                        keys=[image_key, "box_mask"],
+                                        spatial_size=resize,
+                                        mode=('bilinear','nearest')
+                                    ),
+                                    MaskToBoxd(
+                                        box_keys=[box_key],
+                                        label_keys=[label_key],
+                                        box_mask_keys=["box_mask"],
+                                        min_fg_label=0,
+                                    ),
+                                    Rotate90d(keys=image_key, k=3),
+                                    Flipd(image_key, 1),
+                                    EnsureTyped(keys=[image_key, box_key], dtype=torch.float32),
+                                    EnsureTyped(keys=[label_key], dtype=int),
+                                    ]),
+                                    
+                    "omidb": Compose([
                                     LoadImaged(keys=[image_key], meta_key_postfix="meta_dict"),
                                     EnsureChannelFirstd(keys=[image_key]),
                                     EnsureTyped(keys=[image_key], dtype=torch.float32),

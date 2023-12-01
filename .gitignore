@@ -1,3 +1,4 @@
 *.pt
 wandb
 __pycache__
+*.ipynb

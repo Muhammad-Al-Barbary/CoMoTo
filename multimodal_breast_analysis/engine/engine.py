@@ -3,7 +3,7 @@ from multimodal_breast_analysis.models.unet import UNet as unet
 from multimodal_breast_analysis.configs.configs import config
 from multimodal_breast_analysis.data.dataloader import DataLoader
 from multimodal_breast_analysis.data.transforms import train_transforms, test_transforms
-from multimodal_breast_analysis.data.datasets import penn_fudan
+from multimodal_breast_analysis.data.datasets import penn_fudan, omidb
 from multimodal_breast_analysis.engine.utils import prepare_batch, log_transforms, average_dicts
 from multimodal_breast_analysis.engine.visualization import visualize_batch
 
@@ -18,6 +18,7 @@ from torch.nn.functional import softmax, log_softmax
 from monai.data.box_utils import box_iou
 from monai.apps.detection.metrics.coco import COCOMetric
 from monai.apps.detection.metrics.matching import matching_batch
+import gc
 
 class Engine:
     def __init__(self):
@@ -94,6 +95,7 @@ class Engine:
     def _get_data(self, dataset_name):
         data = {
              "penn_fudan": penn_fudan,
+             "omidb": omidb
              } #
         return data[dataset_name]
 
@@ -161,6 +163,8 @@ class Engine:
             print(f"\nWarmup Epoch {epoch+1}/{warmup_epochs}\n-------------------------------")
             epoch_loss = 0
             for batch in tqdm(self.teacher_trainloader, unit="iter"):
+                gc.collect()
+                torch.cuda.empty_cache()
                 self.teacher.train()
                 image, target = prepare_batch(batch, self.device)
                 loss = self.teacher(
@@ -236,6 +240,8 @@ class Engine:
             self.student.train()
             self.teacher.eval()
             for student_batch in tqdm(self.student_trainloader, unit="iter"):
+                gc.collect()
+                torch.cuda.empty_cache()
                 student_image, student_target = prepare_batch(student_batch, self.device)
                 base_loss = self.student(
                                     student_image,
@@ -312,6 +318,8 @@ class Engine:
         with torch.no_grad():
           all_dicts = []
           for batch in tqdm(dataloader, unit="iter"):
+            gc.collect()
+            torch.cuda.empty_cache()
             images, targets = prepare_batch(batch, self.device)
             predictions = network(images)
             results_metric = matching_batch(

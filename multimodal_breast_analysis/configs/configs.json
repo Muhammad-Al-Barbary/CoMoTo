@@ -1,12 +1,12 @@
 {
-    "device": 0,
+    "device": 1,
     "seed": 0,
     "data": {
-        "student_name": "penn_fudan",
-        "teacher_name": "penn_fudan",
-        "student_path": "PennFudanPed",
-        "teacher_path": "PennFudanPed",
-        "test_split": 0.2,
+        "student_name": "omidb",
+        "teacher_name": "omidb",
+        "student_path": "/mnt/mia_images/breast/omi-db/iceberg_selection",
+        "teacher_path": "/mnt/mia_images/breast/omi-db/iceberg_selection",
+        "test_split": 0.23,
         "batch_size": 8,
         "shuffle": true
     },
@@ -17,7 +17,7 @@
         "student": "faster_rcnn",
         "student_parameters": {
             "num_classes":2,
-            "classes_names":["background","pedestrian"],
+            "classes_names":["background","abnormality"],
             "backbone": "resnet50",
             "anchors_sizes": [[32, 64, 128, 256, 512]],
             "anchors_aspect_ratios": [[0.5, 1.0, 2.0]],
@@ -27,7 +27,7 @@
         "teacher": "faster_rcnn",
         "teacher_parameters": {
             "num_classes":2,
-            "classes_names":["background","pedestrian"],
+            "classes_names":["background","abnormality"],
             "backbone": "resnet50",
             "anchors_sizes": [[32, 64, 128, 256, 512]],
             "anchors_aspect_ratios": [[0.5, 1.0, 2.0]],
@@ -38,8 +38,8 @@
         "teacher_cp": "checkpoints/teacher.pt"
     },
     "train": {
-        "warmup_epochs": 30,
-        "epochs": 30,
+        "warmup_epochs": 50,
+        "epochs": 50,
         "distill_epoch": 0,
         "student_optimizer": "adam",
         "student_optimizer_parameters": {"lr": 0.0001},
