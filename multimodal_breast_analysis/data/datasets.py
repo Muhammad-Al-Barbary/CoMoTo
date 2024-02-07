@@ -4,12 +4,14 @@ from torchvision.io import read_image
 from torchvision.ops.boxes import masks_to_boxes
 import torch
 import pandas as pd
+import numpy as np
 
 def penn_fudan(root):
     imgs = list(sorted(os.listdir(os.path.join(root, "PNGImages"))))
     masks = list(sorted(os.listdir(os.path.join(root, "PedMasks"))))
     data = []
-    for image, mask in zip(imgs, masks):
+    groups = []
+    for idx, (image, mask) in enumerate(zip(imgs, masks)):
             img_path = os.path.join(root, "PNGImages", image)
             mask_path = os.path.join(root, "PedMasks", mask)
             mask = read_image(mask_path)
@@ -24,33 +26,68 @@ def penn_fudan(root):
             target["boxes"] = boxes
             target["labels"] = labels
             data.append(target)
-    return data
+            groups.append(idx)
+    return data, groups
 
 
-def omidb(img_dir):
+def omidb(csv_path):
+    df = pd.read_csv(csv_path)
+    df = df.loc[df["manufacturer"] == 'HOLOGIC, Inc.']
+    df = df.loc[df["num_marks"] == 1]
+    # df = df.loc[df["view_position"] == 'CC']
+
+    dataset = []
+    groups = []
+    for i in range(len(df)):
+        row = df.iloc[i]
+        image_path = row["path"]
+        boxes = np.asarray([row["bbox"].replace('(', '').replace(')', '').split(',')], dtype = int)
+        if boxes.min() < 0:
+            continue
+        labels = np.asarray([1])
+        dataset.append({"image": image_path, "boxes": boxes, "labels": labels})
+        groups.append([row['client']])
+    return dataset, groups
+
+
+
+def omidb_downsampled(img_dir):
     csv_file = os.path.join(img_dir, "omidb-selection.csv")
     df = pd.read_csv(csv_file)
-    df_hologic = df.loc[df["scanner"] == 'HOLOGIC']
-    df.head()
+    df = df.loc[df["scanner"] == 'HOLOGIC']
     dataset = []    
-    failed_counter = 0
-    for idx, row in df_hologic.iterrows():
-        if idx in [
-                    166, 242, 350, 387, 603, 985, 1008, 1142, 1330, 1336, 1353, 1359, 1393, 1412, 1592, 1664, 1677, 1684, 1765, 1766, 
-                    1966, 2006, 2014, 2443, 2467, 2985, 3008, 3023, 3027, 3261, 3329, 3418, 3461, 3574, 3645, 3682, 3687, 3717
-                ]:
-            continue # corrupted coordinates
+    groups = []
+    for idx, row in df.iterrows():
+        if idx in [552, 1142, 3008, 3461, 3645, 3682]: # negative coordinates/roi larger than image
+            continue
         filename = os.path.join(img_dir+"/HOLOGIC/ffdm/st"+"{0:03}".format(row["subtype"]), row["filename"])
+        bbox = row["bbox"][12:-1]
+        x_crop,y_crop,_,_ = [int(value.split('=')[1]) for value in bbox.split(', ')]
         bbox_roi = row["bbox_roi"][12:-1]
-        coords = bbox_roi.split(',')
-        x1 = int(coords[0].split('=')[-1])
-        y1 = int(coords[1].split('=')[-1])
-        x2 = int(coords[2].split('=')[-1])
-        y2 = int(coords[3].split('=')[-1])  
-        data = {
-                "image": filename, 
-                "boxes": torch.tensor([[x1,y1,x2,y2]]),
-                "labels": torch.tensor([1])
-                }         
-        dataset.append(data)
-    return dataset
+        xmin, ymin, xmax, ymax = [int(value.split('=')[1]) for value in bbox_roi.split(', ')]
+        xmin, ymin, xmax, ymax = xmin - x_crop, ymin - y_crop, xmax - x_crop, ymax - y_crop
+        dataset.append({"image": filename, "boxes": np.asarray([[xmin,ymin,xmax,ymax]], dtype = int), "labels": np.asarray([1]),
+                        "client": row['client'], "filename": filename})
+        groups.append(row['client'])
+    return dataset, groups
+
+    
+def dbt_2d(data_path, metadata_path):
+    metadata = pd.read_csv(metadata_path)
+    # metadata = metadata.drop_duplicates(subset=['PatientID', 'StudyUID', 'View'], keep=False) #single lesion only
+    dataset = []    
+    groups = []
+    for path in os.listdir(data_path):
+        patient_id, study_id, view, slice = path.split('.')[0].split('_')
+        image_path = data_path + path
+        rows = metadata[(metadata['PatientID'] == patient_id) & (metadata['StudyUID'] == study_id) & (metadata['View'] == view)]
+        rows = rows[(float(slice) >= rows['Slice'] - 0.25 * rows['VolumeSlices']) & (float(slice) <= rows['Slice'] + 0.25 * rows['VolumeSlices'])]
+        boxes = rows[['xmin', 'ymin', 'xmax', 'ymax']].values.astype(int)
+        labels = np.ones(boxes.shape[0])
+        central_slice = rows['Slice'].values
+        if int(slice) in central_slice:
+            dataset.append({"image": image_path, "boxes": boxes, "labels": labels,
+                            "PatientID": patient_id, "StudyUID": study_id, "View": view, "Slice":slice, "CentralSlice": central_slice})
+            groups.append(patient_id)
+    return dataset, groups
+

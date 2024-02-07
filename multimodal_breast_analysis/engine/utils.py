@@ -1,4 +1,8 @@
 import ast
+import torch
+import random
+import numpy as np
+import monai
 
 def prepare_batch(batch, device):
   image = [batch[i]["image"].to(device) for i in range(len(batch))]
@@ -52,3 +56,19 @@ def log_transforms(file_path, dataset_name):
     train_list = ''.join(train_list)
     test_list = ''.join(test_list)
     return (train_list, test_list)
+
+
+
+def set_seed(seed):
+    """
+    Sets seed for all randomized attributes of the packages and modules.
+    Usually called before engine initialization. 
+    """
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    random.seed(seed)
+    np.random.seed(seed)
+    monai.utils.set_determinism(seed=seed)
