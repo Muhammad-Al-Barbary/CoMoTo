@@ -36,15 +36,13 @@ from monai.apps.detection.transforms.dictionary import (
 )
 import torch
 
-from multimodal_breast_analysis.configs.configs import config
 
 
-image_key = "image"
-box_key = "boxes"
-label_key = "labels"
-resize = config.transforms['size']
-
-def train_transforms(dataset_name):
+def train_transforms(dataset_name, configs):
+    resize = configs['size']
+    image_key = "image"
+    box_key = "boxes"
+    label_key = "labels"
     transforms = {
                     "penn_fudan": Compose([
                                     LoadImaged(keys=[image_key], meta_key_postfix="meta_dict"),
@@ -311,7 +309,11 @@ def train_transforms(dataset_name):
     return transforms[dataset_name]
 
 
-def test_transforms(dataset_name):
+def test_transforms(dataset_name, configs):
+    resize = configs['size']
+    image_key = "image"
+    box_key = "boxes"
+    label_key = "labels"
     transforms = {
                     "penn_fudan": Compose([
                                     LoadImaged(keys=[image_key], meta_key_postfix="meta_dict"),
