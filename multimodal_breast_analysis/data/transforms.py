@@ -241,7 +241,7 @@ def train_transforms(dataset_name, configs):
                                     ),
                                     ###################### AUGMENTATIONS ######################
                                     RandFlipd(keys=[image_key, "box_mask"], prob = 0.5, spatial_axis = 0),
-                                    RandFlipd(keys=[image_key, "box_mask"], prob = 0.5, spatial_axis = 1),
+                                    # RandFlipd(keys=[image_key, "box_mask"], prob = 0.5, spatial_axis = 1),
                                     # RandRotated(keys=[image_key, "box_mask"], prob = 0.5, range_x = 0.35, mode = ['bilinear', 'nearest']),
                                     # RandAdjustContrastd(keys=image_key, prob = 0.5, gamma = 1.5),
                                     # RandGaussianNoised(keys=image_key, prob = 0.5),
@@ -287,7 +287,7 @@ def train_transforms(dataset_name, configs):
                                     ),
                                     ###################### AUGMENTATIONS ######################
                                     RandFlipd(keys=[image_key, "box_mask"], prob = 0.5, spatial_axis = 0),
-                                    RandFlipd(keys=[image_key, "box_mask"], prob = 0.5, spatial_axis = 1),
+                                    # RandFlipd(keys=[image_key, "box_mask"], prob = 0.5, spatial_axis = 1),
                                     # RandRotated(keys=[image_key, "box_mask"], prob = 0.5, range_x = 0.35, mode = ['bilinear', 'nearest']),
                                     # RandAdjustContrastd(keys=image_key, prob = 0.75, gamma = 1.5),
                                     # RandGaussianNoised(keys=image_key, prob = 0.75),

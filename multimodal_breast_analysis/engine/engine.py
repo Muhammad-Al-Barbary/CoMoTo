@@ -71,7 +71,7 @@ class Engine:
                             seed=self.config.seed
                             )
         self.student_trainloader = student_loader.trainloader(
-                                       train_transforms(self.config.data["student_name"], self.config.transforms), 
+                                        train_transforms(self.config.data["student_name"], self.config.transforms), 
                                         batch_size=self.config.data["batch_size"], 
                                         shuffle=self.config.data["shuffle"],
                                         train_ratio=self.config.data["train_ratio"],
@@ -171,13 +171,13 @@ class Engine:
         if mode == "teacher":
             if path is None:
                 path = self.config.networks["last_teacher_cp"]
-            checkpoint = torch.load(path)
+            checkpoint = torch.load(path, map_location=torch.device(self.device))
             self.teacher.load_state_dict(checkpoint['network'])
             # self.teacher_optimizer.load_state_dict(checkpoint['optimizer'])
         elif mode == "student":
             if path is None:
                 path = self.config.networks["last_student_cp"]
-            checkpoint = torch.load(path)
+            checkpoint = torch.load(path, map_location=torch.device(self.device))
             self.student.load_state_dict(checkpoint['network'])
             # self.student_optimizer.load_state_dict(checkpoint['optimizer'])
 
@@ -219,27 +219,17 @@ class Engine:
                 loss = sum(sample_loss for sample_loss in loss.values())
                 epoch_detection_loss += loss.item()
 ##############################################Cross Alignment########################################################################################
-                if CROSS_ALIGN: #not fully functional yet
+                if CROSS_ALIGN:
                     teacher_features = self.features['teacher']
-                    teacher_ratio = teacher_features.shape[-1] / image[0].shape[-1]
-                    teacher_boxes = [(target[i]['boxes'] * teacher_ratio).round().int() for i in range(len(target))]
-                    for i in range(len(teacher_boxes)):
-                        teacher_boxes[i][:,0] = teacher_boxes[i][:,0].clamp(max = teacher_features.shape[-1]-1)
-                        teacher_boxes[i][:,1] = teacher_boxes[i][:,1].clamp(max = teacher_features.shape[-2]-1)
-                        teacher_boxes[i][:,2] = teacher_boxes[i][:,2].clamp(max = teacher_features.shape[-1]-1)
-                        teacher_boxes[i][:,3] = teacher_boxes[i][:,3].clamp(max = teacher_features.shape[-2]-1)
-                        
+                    teacher_ratio = (teacher_features.shape[-1]-1) / (image[0].shape[-1]-1)
+                    teacher_boxes = [((target[i]['boxes']) * teacher_ratio).round().int() for i in range(len(target))]      
                     teacher_features_selected_negative = []
                     for i in range(len(teacher_boxes)):
                         boxes_mask = torch.ones((teacher_features.shape[-2], teacher_features.shape[-1]))
                         for xmin,ymin,xmax,ymax in teacher_boxes[i]:
-                            boxes_mask[ymin:ymax+1, xmin:xmax+1] = 0                             
+                            boxes_mask[ymin:ymax, xmin:xmax] = 0  
                         positive_indices = torch.nonzero(boxes_mask == 1)
                         shuffled_indices = positive_indices[torch.randperm(positive_indices.size(0))]
-                        if shuffled_indices.size(0) < 9:
-                            print("FAILED at:", batch[i]['filename'])
-                            import matplotlib.pyplot as plt
-                            plt.imshow(boxes_mask.cpu().numpy())
                         sampled_indices = shuffled_indices[:min(9, shuffled_indices.size(0))].t()
                         teacher_features_selected_negative.append(teacher_features[i, :, sampled_indices[0], sampled_indices[1]])
                     teacher_features_selected_negative = torch.stack(teacher_features_selected_negative, dim = 0)
@@ -338,29 +328,24 @@ class Engine:
         self.student.backbone.register_forward_hook(get_features('student'))
         self.teacher.backbone.register_forward_hook(get_features('teacher'))
         with torch.no_grad():
-            student_batch = next(iter(self.student_trainloader))
-            teacher_batch = next(iter(self.teacher_trainloader))
-            student_image, student_target = prepare_batch(student_batch, self.device)
-            teacher_image, teacher_target = prepare_batch(teacher_batch, self.device)
-            self.student(student_image, student_target)
-            self.teacher(teacher_image, teacher_target)
-            student_features = self.features['student']
-            teacher_features = self.features['teacher']
-            # ratio = int(teacher_features.shape[1] / student_features.shape[1])
-            # self.pooler = torch.nn.MaxPool1d(ratio, stride=ratio, padding=0)
-            # self.pooler_selected = torch.nn.MaxPool2d(3, stride=1, padding=1)
-            self.flat = Flatten(start_dim=2).to(self.device)
-            self.project = Linear(
-                                torch.prod(torch.tensor(student_features.shape[2:])),
-                                torch.prod(torch.tensor(teacher_features.shape[2:]))
-                                ).to(self.device)
-            self.student_optimizer.add_param_group({'params':self.project.parameters()})
-
-            self.project_selected = Linear(9, 9).to(self.device)
-            self.student_optimizer.add_param_group({'params':self.project_selected.parameters()})
-
-            # self.project_selected_sim = Linear(2048, 2048).to(self.device)
-            # self.student_optimizer.add_param_group({'params':self.project_selected_sim.parameters()})
+            if self.config.train['distill_mode'] == "image_level":
+                student_batch = next(iter(self.student_trainloader))
+                teacher_batch = next(iter(self.teacher_trainloader))
+                student_image, student_target = prepare_batch(student_batch, self.device)
+                teacher_image, teacher_target = prepare_batch(teacher_batch, self.device)
+                self.student(student_image, student_target)
+                self.teacher(teacher_image, teacher_target)
+                student_features = self.features['student']
+                teacher_features = self.features['teacher']
+                self.flat = Flatten(start_dim=2).to(self.device)
+                self.project = Linear(
+                                    torch.prod(torch.tensor(student_features.shape[2:])),
+                                    torch.prod(torch.tensor(teacher_features.shape[2:]))
+                                    ).to(self.device)
+                self.student_optimizer.add_param_group({'params':self.project.parameters()})
+            elif self.config.train['distill_mode'] == "object_level":
+                self.project_selected = Linear(9, 9).to(self.device)
+                self.student_optimizer.add_param_group({'params':self.project_selected.parameters()})
 
     def train(self):
         self._instantiate_kd()
@@ -391,137 +376,111 @@ class Engine:
                     except StopIteration:
                         teacher_iter = iter(self.teacher_trainloader)
                         teacher_batch = next(teacher_iter)
-                        # if (len(teacher_batch['image']) != len(student_batch['image'])):
-                        #     continue
                     teacher_image, teacher_target = prepare_batch(teacher_batch, self.device)
                     with torch.no_grad():
                         self.teacher(teacher_image)
                     teacher_features = self.features['teacher']
                     student_features = self.features['student']
-                    
-                    # student_features = self.pooler_selected(student_features)
-                    # teacher_features = self.pooler_selected(teacher_features)
 
                     ##################### Lesion-specific KD ####################################################
-                    student_ratio = student_features.shape[-1] / student_image[0].shape[-1]
-                    teacher_ratio = teacher_features.shape[-1] / teacher_image[0].shape[-1]
-                    student_boxes = [(student_target[i]['boxes'] * student_ratio).round().int() for i in range(len(student_target))]
-                    teacher_boxes = [(teacher_target[i]['boxes'] * teacher_ratio).round().int() for i in range(len(teacher_target))]
-                    for i in range(len(student_boxes)):
-                        student_boxes[i][:,0] = student_boxes[i][:,0].clamp(max = student_features.shape[-1]-1)
-                        student_boxes[i][:,1] = student_boxes[i][:,1].clamp(max = student_features.shape[-2]-1)
-                        student_boxes[i][:,2] = student_boxes[i][:,2].clamp(max = student_features.shape[-1]-1)
-                        student_boxes[i][:,3] = student_boxes[i][:,3].clamp(max = student_features.shape[-2]-1)
-                    for i in range(len(teacher_boxes)):
-                        teacher_boxes[i][:,0] = teacher_boxes[i][:,0].clamp(max = teacher_features.shape[-1]-1)
-                        teacher_boxes[i][:,1] = teacher_boxes[i][:,1].clamp(max = teacher_features.shape[-2]-1)
-                        teacher_boxes[i][:,2] = teacher_boxes[i][:,2].clamp(max = teacher_features.shape[-1]-1)
-                        teacher_boxes[i][:,3] = teacher_boxes[i][:,3].clamp(max = teacher_features.shape[-2]-1)
-                    student_feature_botleft, student_feature_botright, student_feature_topleft, student_feature_topright = [], [], [], []
-                    student_feature_center = []
-                    student_feature_left, student_feature_right, student_feature_top, student_feature_bot = [], [], [], []
-                    for sample_num in range(len(student_features)):
-                        student_num_boxes = student_boxes[sample_num].shape[0]
-                        if student_num_boxes > 0:
-                            student_feature_botleft.append(sum(
-                                [student_features[sample_num, :, student_boxes[sample_num][box_num][1], student_boxes[sample_num][box_num][0]] for box_num in range(student_num_boxes)]
-                            ) / student_num_boxes)
-                            student_feature_botright.append(sum(
-                                [student_features[sample_num, :, student_boxes[sample_num][box_num][1], student_boxes[sample_num][box_num][2]] for box_num in range(student_num_boxes)]
-                            ) / student_num_boxes)
-                            student_feature_topleft.append(sum(
-                                [student_features[sample_num, :, student_boxes[sample_num][box_num][3], student_boxes[sample_num][box_num][0]] for box_num in range(student_num_boxes)]
-                            ) / student_num_boxes)
-                            student_feature_topright.append(sum(
-                                [student_features[sample_num, :, student_boxes[sample_num][box_num][3], student_boxes[sample_num][box_num][2]] for box_num in range(student_num_boxes)]
-                            ) / student_num_boxes)
-                            student_feature_center.append(sum(
-                                [student_features[sample_num, :, int((student_boxes[sample_num][box_num][1]+student_boxes[sample_num][box_num][3])/2), int((student_boxes[sample_num][box_num][0]+student_boxes[sample_num][box_num][2])/2)] for box_num in range(student_num_boxes)]
-                            ) / student_num_boxes)
-                            student_feature_left.append(sum(
-                                [student_features[sample_num, :, int((student_boxes[sample_num][box_num][1]+student_boxes[sample_num][box_num][3])/2), student_boxes[sample_num][box_num][0]] for box_num in range(student_num_boxes)]
-                            ) / student_num_boxes)
-                            student_feature_right.append(sum(
-                                [student_features[sample_num, :, int((student_boxes[sample_num][box_num][1]+student_boxes[sample_num][box_num][3])/2), student_boxes[sample_num][box_num][2]] for box_num in range(student_num_boxes)]
-                            ) / student_num_boxes)
-                            student_feature_top.append(sum(
-                                [student_features[sample_num, :, student_boxes[sample_num][box_num][1], int((student_boxes[sample_num][box_num][0]+student_boxes[sample_num][box_num][2])/2)] for box_num in range(student_num_boxes)]
-                            ) / student_num_boxes)
-                            student_feature_bot.append(sum(
-                                [student_features[sample_num, :, student_boxes[sample_num][box_num][3], int((student_boxes[sample_num][box_num][0]+student_boxes[sample_num][box_num][2])/2)] for box_num in range(student_num_boxes)]
-                            ) / student_num_boxes)
-                    student_feature_botleft = sum(student_feature_botleft) / len(student_feature_botleft)
-                    student_feature_botright = sum(student_feature_botright) / len(student_feature_botright)
-                    student_feature_topleft = sum(student_feature_topleft) / len(student_feature_topleft)
-                    student_feature_topright = sum(student_feature_topright) / len(student_feature_topright)
-                    student_feature_center = sum(student_feature_center) / len(student_feature_center)
-                    student_feature_left = sum(student_feature_left) / len(student_feature_left)
-                    student_feature_right = sum(student_feature_right) / len(student_feature_right)
-                    student_feature_top = sum(student_feature_top) / len(student_feature_top)
-                    student_feature_bot = sum(student_feature_bot) / len(student_feature_bot)
-                    teacher_feature_botleft, teacher_feature_botright, teacher_feature_topleft, teacher_feature_topright = [], [], [], []
-                    teacher_feature_center = []
-                    teacher_feature_left, teacher_feature_right, teacher_feature_top, teacher_feature_bot = [], [], [], []
-                    for sample_num in range(len(teacher_features)):
-                        teacher_num_boxes = teacher_boxes[sample_num].shape[0]
-                        if teacher_num_boxes > 0:
-                            teacher_feature_botleft.append(sum(
-                                [teacher_features[sample_num, :, teacher_boxes[sample_num][box_num][1], teacher_boxes[sample_num][box_num][0]] for box_num in range(teacher_num_boxes)]
-                            ) / teacher_num_boxes)
-                            teacher_feature_botright.append(sum(
-                                [teacher_features[sample_num, :, teacher_boxes[sample_num][box_num][1], teacher_boxes[sample_num][box_num][2]] for box_num in range(teacher_num_boxes)]
-                            ) / teacher_num_boxes)
-                            teacher_feature_topleft.append(sum(
-                                [teacher_features[sample_num, :, teacher_boxes[sample_num][box_num][3], teacher_boxes[sample_num][box_num][0]] for box_num in range(teacher_num_boxes)]
-                            ) / teacher_num_boxes)
-                            teacher_feature_topright.append(sum(
-                                [teacher_features[sample_num, :, teacher_boxes[sample_num][box_num][3], teacher_boxes[sample_num][box_num][2]] for box_num in range(teacher_num_boxes)]
-                            ) / teacher_num_boxes)
-                            teacher_feature_center.append(sum(
-                                [teacher_features[sample_num, :, int((teacher_boxes[sample_num][box_num][1]+teacher_boxes[sample_num][box_num][3])/2), int((teacher_boxes[sample_num][box_num][0]+teacher_boxes[sample_num][box_num][2])/2)] for box_num in range(teacher_num_boxes)]
-                            ) / teacher_num_boxes)
-                            teacher_feature_left.append(sum(
-                                [teacher_features[sample_num, :, int((teacher_boxes[sample_num][box_num][1]+teacher_boxes[sample_num][box_num][3])/2), teacher_boxes[sample_num][box_num][0]] for box_num in range(teacher_num_boxes)]
-                            ) / teacher_num_boxes)
-                            teacher_feature_right.append(sum(
-                                [teacher_features[sample_num, :, int((teacher_boxes[sample_num][box_num][1]+teacher_boxes[sample_num][box_num][3])/2), teacher_boxes[sample_num][box_num][2]] for box_num in range(teacher_num_boxes)]
-                            ) / teacher_num_boxes)
-                            teacher_feature_top.append(sum(
-                                [teacher_features[sample_num, :, teacher_boxes[sample_num][box_num][1], int((teacher_boxes[sample_num][box_num][0]+teacher_boxes[sample_num][box_num][2])/2)] for box_num in range(teacher_num_boxes)]
-                            ) / teacher_num_boxes)
-                            teacher_feature_bot.append(sum(
-                                [teacher_features[sample_num, :, teacher_boxes[sample_num][box_num][3], int((teacher_boxes[sample_num][box_num][0]+teacher_boxes[sample_num][box_num][2])/2)] for box_num in range(teacher_num_boxes)]
-                            ) / teacher_num_boxes)
-                    teacher_feature_botleft = sum(teacher_feature_botleft) / len(teacher_feature_botleft)
-                    teacher_feature_botright = sum(teacher_feature_botright) / len(teacher_feature_botright)
-                    teacher_feature_topleft = sum(teacher_feature_topleft) / len(teacher_feature_topleft)
-                    teacher_feature_topright = sum(teacher_feature_topright) / len(teacher_feature_topright)
-                    teacher_feature_center = sum(teacher_feature_center) / len(teacher_feature_center)
-                    teacher_feature_left = sum(teacher_feature_left) / len(teacher_feature_left)
-                    teacher_feature_right = sum(teacher_feature_right) / len(teacher_feature_right)
-                    teacher_feature_top = sum(teacher_feature_top) / len(teacher_feature_top)
-                    teacher_feature_bot = sum(teacher_feature_bot) / len(teacher_feature_bot)
-                    teacher_features_selected = torch.stack([teacher_feature_botleft, teacher_feature_botright, teacher_feature_topleft, teacher_feature_topright, teacher_feature_center, teacher_feature_left, teacher_feature_right, teacher_feature_top, teacher_feature_bot]).permute(1,0)
-                    student_features_selected = torch.stack([student_feature_botleft, student_feature_botright, student_feature_topleft, student_feature_topright, student_feature_center, student_feature_left, student_feature_right, student_feature_top, student_feature_bot]).permute(1,0)
-                    student_features_selected = self.project_selected(student_features_selected)
-                    selected_ratio = teacher_features[0][0].shape[0]/9
+                    if self.config.train['distill_mode'] == "object_level":
+                        student_ratio = (student_features.shape[-1]-1) / (student_image[0].shape[-1]-1)
+                        teacher_ratio = (teacher_features.shape[-1]-1) / (teacher_image[0].shape[-1]-1)
+                        student_boxes = [(student_target[i]['boxes'] * student_ratio).round().int() for i in range(len(student_target))]
+                        teacher_boxes = [(teacher_target[i]['boxes'] * teacher_ratio).round().int() for i in range(len(teacher_target))]
+                        student_feature_botleft, student_feature_botright, student_feature_topleft, student_feature_topright = [], [], [], []
+                        student_feature_center = []
+                        student_feature_left, student_feature_right, student_feature_top, student_feature_bot = [], [], [], []
+                        for sample_num in range(len(student_features)):
+                            student_num_boxes = student_boxes[sample_num].shape[0]
+                            if student_num_boxes > 0:
+                                student_feature_botleft.append(sum(
+                                    [student_features[sample_num, :, student_boxes[sample_num][box_num][1], student_boxes[sample_num][box_num][0]] for box_num in range(student_num_boxes)]
+                                ) / student_num_boxes)
+                                student_feature_botright.append(sum(
+                                    [student_features[sample_num, :, student_boxes[sample_num][box_num][1], student_boxes[sample_num][box_num][2]] for box_num in range(student_num_boxes)]
+                                ) / student_num_boxes)
+                                student_feature_topleft.append(sum(
+                                    [student_features[sample_num, :, student_boxes[sample_num][box_num][3], student_boxes[sample_num][box_num][0]] for box_num in range(student_num_boxes)]
+                                ) / student_num_boxes)
+                                student_feature_topright.append(sum(
+                                    [student_features[sample_num, :, student_boxes[sample_num][box_num][3], student_boxes[sample_num][box_num][2]] for box_num in range(student_num_boxes)]
+                                ) / student_num_boxes)
+                                student_feature_center.append(sum(
+                                    [student_features[sample_num, :, int((student_boxes[sample_num][box_num][1]+student_boxes[sample_num][box_num][3])/2), int((student_boxes[sample_num][box_num][0]+student_boxes[sample_num][box_num][2])/2)] for box_num in range(student_num_boxes)]
+                                ) / student_num_boxes)
+                                student_feature_left.append(sum(
+                                    [student_features[sample_num, :, int((student_boxes[sample_num][box_num][1]+student_boxes[sample_num][box_num][3])/2), student_boxes[sample_num][box_num][0]] for box_num in range(student_num_boxes)]
+                                ) / student_num_boxes)
+                                student_feature_right.append(sum(
+                                    [student_features[sample_num, :, int((student_boxes[sample_num][box_num][1]+student_boxes[sample_num][box_num][3])/2), student_boxes[sample_num][box_num][2]] for box_num in range(student_num_boxes)]
+                                ) / student_num_boxes)
+                                student_feature_top.append(sum(
+                                    [student_features[sample_num, :, student_boxes[sample_num][box_num][1], int((student_boxes[sample_num][box_num][0]+student_boxes[sample_num][box_num][2])/2)] for box_num in range(student_num_boxes)]
+                                ) / student_num_boxes)
+                                student_feature_bot.append(sum(
+                                    [student_features[sample_num, :, student_boxes[sample_num][box_num][3], int((student_boxes[sample_num][box_num][0]+student_boxes[sample_num][box_num][2])/2)] for box_num in range(student_num_boxes)]
+                                ) / student_num_boxes)
+                        student_feature_botleft = sum(student_feature_botleft) / len(student_feature_botleft)
+                        student_feature_botright = sum(student_feature_botright) / len(student_feature_botright)
+                        student_feature_topleft = sum(student_feature_topleft) / len(student_feature_topleft)
+                        student_feature_topright = sum(student_feature_topright) / len(student_feature_topright)
+                        student_feature_center = sum(student_feature_center) / len(student_feature_center)
+                        student_feature_left = sum(student_feature_left) / len(student_feature_left)
+                        student_feature_right = sum(student_feature_right) / len(student_feature_right)
+                        student_feature_top = sum(student_feature_top) / len(student_feature_top)
+                        student_feature_bot = sum(student_feature_bot) / len(student_feature_bot)
+                        teacher_feature_botleft, teacher_feature_botright, teacher_feature_topleft, teacher_feature_topright = [], [], [], []
+                        teacher_feature_center = []
+                        teacher_feature_left, teacher_feature_right, teacher_feature_top, teacher_feature_bot = [], [], [], []
+                        for sample_num in range(len(teacher_features)):
+                            teacher_num_boxes = teacher_boxes[sample_num].shape[0]
+                            if teacher_num_boxes > 0:
+                                teacher_feature_botleft.append(sum(
+                                    [teacher_features[sample_num, :, teacher_boxes[sample_num][box_num][1], teacher_boxes[sample_num][box_num][0]] for box_num in range(teacher_num_boxes)]
+                                ) / teacher_num_boxes)
+                                teacher_feature_botright.append(sum(
+                                    [teacher_features[sample_num, :, teacher_boxes[sample_num][box_num][1], teacher_boxes[sample_num][box_num][2]] for box_num in range(teacher_num_boxes)]
+                                ) / teacher_num_boxes)
+                                teacher_feature_topleft.append(sum(
+                                    [teacher_features[sample_num, :, teacher_boxes[sample_num][box_num][3], teacher_boxes[sample_num][box_num][0]] for box_num in range(teacher_num_boxes)]
+                                ) / teacher_num_boxes)
+                                teacher_feature_topright.append(sum(
+                                    [teacher_features[sample_num, :, teacher_boxes[sample_num][box_num][3], teacher_boxes[sample_num][box_num][2]] for box_num in range(teacher_num_boxes)]
+                                ) / teacher_num_boxes)
+                                teacher_feature_center.append(sum(
+                                    [teacher_features[sample_num, :, int((teacher_boxes[sample_num][box_num][1]+teacher_boxes[sample_num][box_num][3])/2), int((teacher_boxes[sample_num][box_num][0]+teacher_boxes[sample_num][box_num][2])/2)] for box_num in range(teacher_num_boxes)]
+                                ) / teacher_num_boxes)
+                                teacher_feature_left.append(sum(
+                                    [teacher_features[sample_num, :, int((teacher_boxes[sample_num][box_num][1]+teacher_boxes[sample_num][box_num][3])/2), teacher_boxes[sample_num][box_num][0]] for box_num in range(teacher_num_boxes)]
+                                ) / teacher_num_boxes)
+                                teacher_feature_right.append(sum(
+                                    [teacher_features[sample_num, :, int((teacher_boxes[sample_num][box_num][1]+teacher_boxes[sample_num][box_num][3])/2), teacher_boxes[sample_num][box_num][2]] for box_num in range(teacher_num_boxes)]
+                                ) / teacher_num_boxes)
+                                teacher_feature_top.append(sum(
+                                    [teacher_features[sample_num, :, teacher_boxes[sample_num][box_num][1], int((teacher_boxes[sample_num][box_num][0]+teacher_boxes[sample_num][box_num][2])/2)] for box_num in range(teacher_num_boxes)]
+                                ) / teacher_num_boxes)
+                                teacher_feature_bot.append(sum(
+                                    [teacher_features[sample_num, :, teacher_boxes[sample_num][box_num][3], int((teacher_boxes[sample_num][box_num][0]+teacher_boxes[sample_num][box_num][2])/2)] for box_num in range(teacher_num_boxes)]
+                                ) / teacher_num_boxes)
+                        teacher_feature_botleft = sum(teacher_feature_botleft) / len(teacher_feature_botleft)
+                        teacher_feature_botright = sum(teacher_feature_botright) / len(teacher_feature_botright)
+                        teacher_feature_topleft = sum(teacher_feature_topleft) / len(teacher_feature_topleft)
+                        teacher_feature_topright = sum(teacher_feature_topright) / len(teacher_feature_topright)
+                        teacher_feature_center = sum(teacher_feature_center) / len(teacher_feature_center)
+                        teacher_feature_left = sum(teacher_feature_left) / len(teacher_feature_left)
+                        teacher_feature_right = sum(teacher_feature_right) / len(teacher_feature_right)
+                        teacher_feature_top = sum(teacher_feature_top) / len(teacher_feature_top)
+                        teacher_feature_bot = sum(teacher_feature_bot) / len(teacher_feature_bot)
+                        teacher_features_selected = torch.stack([teacher_feature_botleft, teacher_feature_botright, teacher_feature_topleft, teacher_feature_topright, teacher_feature_center, teacher_feature_left, teacher_feature_right, teacher_feature_top, teacher_feature_bot]).permute(1,0)
+                        student_features_selected = torch.stack([student_feature_botleft, student_feature_botright, student_feature_topleft, student_feature_topright, student_feature_center, student_feature_left, student_feature_right, student_feature_top, student_feature_bot]).permute(1,0)
+                        student_features_selected = self.project_selected(student_features_selected)
+                        distill_loss = self.distill_loss(student_features_selected, teacher_features_selected)
                     #####################################################################################################
-
-
-
-                    teacher_features = self.flat(teacher_features).mean(dim = 0)
-                    student_features = self.project(self.flat(student_features).mean(dim = 0))
-                    # student_features_selected_sim = self.project_selected_sim(torch.cosine_similarity(student_features_selected.unsqueeze(1), student_features_selected.unsqueeze(0), dim=-1))
-                    # teacher_features_selected_sim = torch.cosine_similarity(teacher_features_selected.unsqueeze(1), teacher_features_selected.unsqueeze(0), dim=-1)
-                    # student_features_selected_sim = torch.cosine_similarity(student_features_selected.permute(1,0).unsqueeze(1), student_features_selected.permute(1,0).unsqueeze(0), dim=-1)
-                    # teacher_features_selected_sim = torch.cosine_similarity(teacher_features_selected.permute(1,0).unsqueeze(1), teacher_features_selected.permute(1,0).unsqueeze(0), dim=-1)
-                    # # teacher_features = self.pooler(teacher_features.permute(1,0)).permute(1,0)
-                    # teacher_features = teacher_features[torch.linspace(0, teacher_features.shape[0]-1, student_features.shape[0]).long()]
-                    
-                    # distill_loss =  self.distill_loss(student_features, teacher_features)  / selected_ratio
-                    distill_loss = self.distill_loss(student_features_selected, teacher_features_selected)
-                    # distill_loss = self.distill_loss(student_features_selected_sim, teacher_features_selected_sim)
-
+                    elif self.config.train['distill_mode'] == "image_level":
+                        teacher_features = self.flat(teacher_features).mean(dim = 0)
+                        student_features = self.project(self.flat(student_features).mean(dim = 0))
+                        distill_loss =  self.distill_loss(student_features, teacher_features)
                 total_loss = base_loss + distill_loss
                 self.student_optimizer.zero_grad()
                 total_loss.backward()
@@ -529,8 +488,9 @@ class Engine:
                 epoch_total_loss += total_loss.item()
                 epoch_base_loss += base_loss.item()
                 epoch_distill_loss += distill_loss.item()
-                # if not (batch_num % 3):
+                # if not (batch_num % 1):
                 #     visualize_batch(self.student, student_image, student_target, self.config.networks["student_parameters"]["classes_names"][1], figsize = (7,7))
+                #     self.student.train()
 
             self.student_scheduler.step()
             epoch_total_loss = epoch_total_loss / len(self.student_trainloader)

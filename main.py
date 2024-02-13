@@ -181,11 +181,11 @@ if __name__ == "__main__":
                 help = 'name of the config file to be loaded (without extension)'
                 )
     parser.add_argument(
-                '--mammo', type = bool, default = True,
+                '--mammo', action='store_true',
                 help = 'train mammography model'
                 )
     parser.add_argument(
-                '--dbt', type = bool, default = True,
+                '--dbt', action='store_true',
                 help = 'train dbt model'
                 )
     args = parser.parse_args()
