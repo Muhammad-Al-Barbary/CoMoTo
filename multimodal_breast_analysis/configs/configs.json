@@ -1,12 +1,12 @@
 {
-    "device": 0,
+    "device": 1,
     "seed": 0,
     "data": {
         "student_name": "dbt_2d",
         "teacher_name": "omidb_downsampled",
         "student_args": ["/home/muhammad/multimodal_learning/datasets/dbt/2d/", "/home/muhammad/multimodal_learning/datasets/dbt/metadata.csv"],
         "teacher_args": ["/mnt/mia_images/breast/omi-db/iceberg_selection"],
-        "valid_split": 0.1,
+        "valid_split": 0.2,
         "test_split": 0.2,
         "batch_size": 8,
         "shuffle": true,
@@ -55,8 +55,9 @@
         "teacher_optimizer_parameters": {"lr": 0.01,"momentum": 0.9, "weight_decay": 0.0},
         "teacher_scheduler":"step",
         "teacher_scheduler_parameters":{"step_size":25, "gamma":0.1, "verbose":1},
-        "distill_mode": "pretraining",
-        "temperature": 2,
-        "alpha": 3
+        "distill_mode": "object_level",
+        "temperature": 1,
+        "alpha": 3,
+        "beta": 1
     }
 }

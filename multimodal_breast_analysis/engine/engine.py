@@ -311,8 +311,11 @@ class Engine:
                 self.save('teacher', path = self.config.networks["best_teacher_cp"])
 
 
-    def distill_loss(self, student_outputs, teacher_outputs):
-        T, alpha = self.config.train["temperature"], self.config.train["alpha"]
+    def distill_loss(self, student_outputs, teacher_outputs, alpha = None, T = None):
+        if alpha is None:
+            alpha = self.config.train["alpha"]
+        if T is None:
+            T = self.config.train["temperature"]
         return KLDivLoss(reduction='batchmean')(
             log_softmax(student_outputs/T, dim=1),
             softmax(teacher_outputs/T, dim=1)
@@ -388,6 +391,19 @@ class Engine:
                         teacher_ratio = (teacher_features.shape[-1]-1) / (teacher_image[0].shape[-1]-1)
                         student_boxes = [(student_target[i]['boxes'] * student_ratio).round().int() for i in range(len(student_target))]
                         teacher_boxes = [(teacher_target[i]['boxes'] * teacher_ratio).round().int() for i in range(len(teacher_target))]
+
+                        student_features_selected_negative = []
+                        for i in range(len(student_boxes)):
+                            boxes_mask = torch.ones((student_features.shape[-2], student_features.shape[-1]))
+                            for xmin,ymin,xmax,ymax in student_boxes[i]:
+                                boxes_mask[ymin:ymax, xmin:xmax] = 0  
+                            positive_indices = torch.nonzero(boxes_mask == 1)
+                            shuffled_indices = positive_indices[torch.randperm(positive_indices.size(0))]
+                            sampled_indices = shuffled_indices[:min(9, shuffled_indices.size(0))].t()
+                            student_features_selected_negative.append(student_features[i, :, sampled_indices[0], sampled_indices[1]])
+                        student_features_selected_negative = torch.stack(student_features_selected_negative, dim = 0).mean(0)
+                        student_features_selected_negative = self.project_selected(student_features_selected_negative)
+                        
                         student_feature_botleft, student_feature_botright, student_feature_topleft, student_feature_topright = [], [], [], []
                         student_feature_center = []
                         student_feature_left, student_feature_right, student_feature_top, student_feature_bot = [], [], [], []
@@ -475,8 +491,10 @@ class Engine:
                         teacher_features_selected = torch.stack([teacher_feature_botleft, teacher_feature_botright, teacher_feature_topleft, teacher_feature_topright, teacher_feature_center, teacher_feature_left, teacher_feature_right, teacher_feature_top, teacher_feature_bot]).permute(1,0)
                         student_features_selected = torch.stack([student_feature_botleft, student_feature_botright, student_feature_topleft, student_feature_topright, student_feature_center, student_feature_left, student_feature_right, student_feature_top, student_feature_bot]).permute(1,0)
                         student_features_selected = self.project_selected(student_features_selected)
-                        distill_loss = self.distill_loss(student_features_selected, teacher_features_selected)
-                    #####################################################################################################
+                        distill_loss_positive = self.distill_loss(student_features_selected, teacher_features_selected, alpha = self.config.train["alpha"])
+                        distill_loss_negative = -self.distill_loss(student_features_selected_negative, student_features_selected, alpha = self.config.train["beta"])
+                        distill_loss = distill_loss_positive + distill_loss_negative
+
                     elif self.config.train['distill_mode'] == "image_level":
                         teacher_features = self.flat(teacher_features).mean(dim = 0)
                         student_features = self.project(self.flat(student_features).mean(dim = 0))
