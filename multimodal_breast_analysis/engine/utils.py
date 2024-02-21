@@ -1,12 +1,9 @@
-import ast
 import torch
 import random
 import numpy as np
 import monai
-import math
 import numpy as np
-from enum import IntEnum, unique
-from typing import List, Tuple, Union
+from typing import List, Tuple
 import torch
 from torch import device
 
@@ -105,7 +102,6 @@ def NMS_volume(pred_boxes_vol,pred_scores_vol):
         if (len(pred_boxes_vol[i])>0):
             s0 = max(i-depth,0)
             s1 = min(i+depth,length)
-            # print("i s",i, s0,s1)
             # checking slice i against all other slices (doing a cat)           
             all_boxes = Boxes.cat(pred_boxes_vol[s0:s1])
             all_scores =  torch.squeeze(torch.cat([b for b in pred_scores_vol[s0:s1]], dim=0))
@@ -114,29 +110,22 @@ def NMS_volume(pred_boxes_vol,pred_scores_vol):
                 if (all_scores.shape[0] >0): # this is to solve bug found that some tensors were [0,1]
                     # check if there is overlap
                     iou_matrix = torch.squeeze(pairwise_iou(pred_boxes_vol[i], all_boxes))
-    #                 print("iou: ",iou_matrix)
                     j = 0
-                    is_all_zero = int(iou_matrix.sum())==0
                     for box, score in zip(pred_boxes_vol[i],pred_scores_vol[i]):
                         if (iou_matrix.dim()>1):
                             idx_s = ((iou_matrix[j,:] > min_iou).nonzero())
-                            r_iou = iou_matrix[j,idx_s] 
                         else: 
                             idx_s = ((iou_matrix > min_iou).nonzero())
-                            r_iou = iou_matrix[idx_s]                                                
                         # condition 1: my score is larger or equal than all other overlapping boxes (idx_s)
-                        # print(idx_s, all_scores, score, iou_matrix)
-                        if (score >= max(all_scores[idx_s])):
+                        if idx_s.numel() > 0 and score >= max(all_scores[idx_s]): # to fix bug idx_s is empty
                             if (score >= min_score):
-    #                             print("adding slice ",i+start_pred, score, box)
                                 final_boxes_vol.append(box)
                                 final_scores_vol.append(score)
                                 final_slices_vol.append(i+start_pred)
                         j +=1
-            else: # there is only one annotatio only check single threshold.
+            else: # there is only one annotation only check single threshold.
                 for box, score in zip(pred_boxes_vol[i],pred_scores_vol[i]):
                     if (score >= min_score_s):
-#                         print("adding Single slice ",i+start_pred, score, box)
                         final_boxes_vol.append(box)
                         final_scores_vol.append(score)
                         final_slices_vol.append(i+start_pred)

@@ -46,40 +46,43 @@ def mammo_final_eval(engine, loader_mode = 'testing'):
             gt_boxes=[sample["boxes"].cpu().numpy() for sample in all_targets],
             gt_classes=[sample["labels"].cpu().numpy() for sample in all_targets],
         )
-        targets_perimg = [results_metric[i][1]['dtMatches'][0] for i in range(len(results_metric))]
-        predictions_perimg = [results_metric[i][1]['dtScores'] for i in range(len(results_metric))]
-        predictions, targets = np.concatenate(predictions_perimg,0), np.concatenate(targets_perimg, 0)
+        predictions = np.concatenate([results_metric[i][1]['dtScores'] for i in range(len(results_metric))],0)
+        targets = np.concatenate([results_metric[i][1]['dtMatches'][0] for i in range(len(results_metric))], 0)
+        num_imgs = len([results_metric[i][1]['dtMatches'][0] for i in range(len(results_metric))])
+        # Calculate ROC curve
         fpr, tpr, thresholds = roc_curve(targets, predictions)
         roc_auc = auc(fpr, tpr)
         print("AUC:", roc_auc)
-        thresholds = []
-        FPIs = []
-        temp = predictions.copy()
-        temp.sort()
-        for threshold in temp:
-            fps_all = []
-            for i in range(len(predictions_perimg)):
-                conf_matrix = confusion_matrix(targets_perimg[i], predictions_perimg[i]>=threshold, labels=[0,1])
-                _, false_positives, _, _ = conf_matrix.ravel()
-                fps_all.append(false_positives)
-            thresholds.append(threshold)
-            FPIs.append(sum(fps_all)/len(fps_all)) 
-        threshold1 = thresholds[closest_index(FPIs, 1)]
-        threshold2 = thresholds[closest_index(FPIs, 2)]
-        threshold3 = thresholds[closest_index(FPIs, 3)]
-        threshold4 = thresholds[closest_index(FPIs, 4)]
-        mean_sensitivity = 0
-        for threshold in [threshold1,threshold2,threshold3,threshold4]:
-            conf_matrix = confusion_matrix(np.asarray(targets), np.asarray(predictions)>threshold, labels=[0,1])
-            true_negatives, false_positives, false_negatives, true_positives = conf_matrix.ravel()
-            sensitivity = true_positives / (true_positives + false_negatives)
-            mean_sensitivity += sensitivity
-        mean_sensitivity/=4
+        all_thresholds = predictions.copy()
+        all_thresholds.sort()
+        fpis = []
+        sensitivities = []
+        sensitivities_at1fpi = []
+        sensitivities_at2fpi = []
+        sensitivities_at3fpi = []
+        sensitivities_at4fpi = []
+        for threshold in all_thresholds:
+            conf_matrix = confusion_matrix(targets, predictions>=threshold, labels=[0,1])
+            tn, fp, fn, tp = conf_matrix.ravel()
+            fpi = fp/num_imgs
+            fpis.append(fpi)
+            sensitivity = tp / (tp + fn)
+            sensitivities.append(sensitivity)
+            if fpi == 1:
+                sensitivities_at1fpi.append(sensitivity)
+            elif fpi == 2:
+                sensitivities_at2fpi.append(sensitivity)
+            elif fpi == 3:
+                sensitivities_at3fpi.append(sensitivity)
+            elif fpi == 4:
+                sensitivities_at4fpi.append(sensitivity)
+        sensitivity_at1fpi = sum(sensitivities_at1fpi)/len(sensitivities_at1fpi)
+        sensitivity_at2fpi = sum(sensitivities_at2fpi)/len(sensitivities_at2fpi)
+        sensitivity_at3fpi = sum(sensitivities_at3fpi)/len(sensitivities_at3fpi)
+        sensitivity_at4fpi = sum(sensitivities_at4fpi)/len(sensitivities_at4fpi)
+        mean_sensitivity = (sensitivity_at1fpi + sensitivity_at2fpi + sensitivity_at3fpi + sensitivity_at4fpi) / 4
         print("Mean Sensitivity:", mean_sensitivity)
-        conf_matrix = confusion_matrix(np.asarray(targets), np.asarray(predictions)>threshold2, labels=[0,1])
-        true_negatives, false_positives, false_negatives, true_positives = conf_matrix.ravel()
-        sensitivity = true_positives / (true_positives + false_negatives)
-        print("Sensitivity @ 2FPI:", sensitivity)
+        print("Sensitivity@2FPI:", sensitivity_at2fpi)
 
 
 
@@ -120,40 +123,41 @@ def dbt_final_eval(engine):
     )
     targets = np.concatenate([results_metric[i][1]['dtMatches'][0] for i in range(len(results_metric))], axis = 0)
     predictions = np.concatenate([results_metric[i][1]['dtScores'] for i in range(len(results_metric))], axis = 0)
-    targets_pervol = [results_metric[i][1]['dtMatches'][0] for i in range(len(results_metric))]
-    preds_pervol = [results_metric[i][1]['dtScores'] for i in range(len(results_metric))]
+    num_vols = len([results_metric[i][1]['dtMatches'][0] for i in range(len(results_metric))])
     # Calculate ROC curve
     fpr, tpr, thresholds = roc_curve(targets, predictions)
     roc_auc = auc(fpr, tpr)
     print("AUC:", roc_auc)
-    thresholds = []
-    FPIs = []
-    temp = predictions.copy()
-    temp.sort()
-    for threshold in temp:
-        fps_all = []
-        for i in range(len(preds_pervol)):
-            conf_matrix = confusion_matrix(targets_pervol[i], preds_pervol[i]>=threshold, labels=[0,1])
-            _, false_positives, _, _ = conf_matrix.ravel()
-            fps_all.append(false_positives)
-        thresholds.append(threshold)
-        FPIs.append(sum(fps_all)/len(fps_all)) 
-    threshold1 = thresholds[closest_index(FPIs, 1)]
-    threshold2 = thresholds[closest_index(FPIs, 2)]
-    threshold3 = thresholds[closest_index(FPIs, 3)]
-    threshold4 = thresholds[closest_index(FPIs, 4)]
-    mean_sensitivity = 0
-    for threshold in [threshold1,threshold2,threshold3,threshold4]:
-        conf_matrix = confusion_matrix(np.asarray(targets), np.asarray(predictions)>threshold, labels=[0,1])
-        true_negatives, false_positives, false_negatives, true_positives = conf_matrix.ravel()
-        sensitivity = true_positives / (true_positives + false_negatives)
-        mean_sensitivity += sensitivity
-    mean_sensitivity/=4
+    all_thresholds = predictions.copy()
+    all_thresholds.sort()
+    fpis = []
+    sensitivities = []
+    sensitivities_at1fpi = []
+    sensitivities_at2fpi = []
+    sensitivities_at3fpi = []
+    sensitivities_at4fpi = []
+    for threshold in all_thresholds:
+        conf_matrix = confusion_matrix(targets, predictions>=threshold, labels=[0,1])
+        tn, fp, fn, tp = conf_matrix.ravel()
+        fpi = fp/num_vols
+        fpis.append(fpi)
+        sensitivity = tp / (tp + fn)
+        sensitivities.append(sensitivity)
+        if fpi == 1:
+            sensitivities_at1fpi.append(sensitivity)
+        elif fpi == 2:
+            sensitivities_at2fpi.append(sensitivity)
+        elif fpi == 3:
+            sensitivities_at3fpi.append(sensitivity)
+        elif fpi == 4:
+            sensitivities_at4fpi.append(sensitivity)
+    sensitivity_at1fpi = sum(sensitivities_at1fpi)/len(sensitivities_at1fpi)
+    sensitivity_at2fpi = sum(sensitivities_at2fpi)/len(sensitivities_at2fpi)
+    sensitivity_at3fpi = sum(sensitivities_at3fpi)/len(sensitivities_at3fpi)
+    sensitivity_at4fpi = sum(sensitivities_at4fpi)/len(sensitivities_at4fpi)
+    mean_sensitivity = (sensitivity_at1fpi + sensitivity_at2fpi + sensitivity_at3fpi + sensitivity_at4fpi) / 4
     print("Mean Sensitivity:", mean_sensitivity)
-    conf_matrix = confusion_matrix(np.asarray(targets), np.asarray(predictions)>threshold2, labels=[0,1])
-    true_negatives, false_positives, false_negatives, true_positives = conf_matrix.ravel()
-    sensitivity = true_positives / (true_positives + false_negatives)
-    print("Sensitivity @ 2FPI:", sensitivity)
+    print("Sensitivity@2FPI:", sensitivity_at2fpi)
 
 
 
@@ -164,13 +168,24 @@ def main(args):
     if args.mammo:
         engine.warmup()
         engine.load(mode="teacher", path=config.networks["best_teacher_cp"])
+        print()
+        print("Final Validation:", engine.test('teacher', 'validation'))
+        print()
+        print("Final Testing:", engine.test('teacher', 'testing'))
+        print()
         mammo_final_eval(engine)
     if args.dbt:
         engine.load(mode="teacher", path=config.networks["best_teacher_cp"])
         engine.load(mode="student", path=config.networks["best_teacher_cp"])
         engine.train()
-        engine.load(mode="student", path=config.networks["best_student_cp"])
-        dbt_final_eval(engine)
+        # engine.load(mode="student", path=config.networks["best_student_cp"])
+        print()
+        print("Final Validation:", engine.test('student', 'validation'))
+        print()
+        print("Final Testing:", engine.test('student', 'testing'))
+        # print()
+        # print()
+        # dbt_final_eval(engine)
 
 
 
