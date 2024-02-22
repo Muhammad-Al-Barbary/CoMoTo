@@ -10,7 +10,7 @@
         "test_split": 0.2,
         "batch_size": 1,
         "shuffle": true,
-        "train_ratio": 0.25
+        "train_ratio": 0.1
     },
     "transforms": {
       "size": [1024, 2048]

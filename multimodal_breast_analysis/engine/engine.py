@@ -9,6 +9,8 @@ from multimodal_breast_analysis.engine.visualization import visualize_batch
 from multimodal_breast_analysis.engine.utils import Boxes, NMS_volume, closest_index
 
 import os
+import csv
+import pandas as pd 
 import cv2
 import natsort
 import shutil
@@ -32,6 +34,7 @@ from random import randint
 import numpy as np
 from sklearn.metrics import roc_curve, auc
 from sklearn.metrics import confusion_matrix
+
 
 
 class Engine:
@@ -576,7 +579,7 @@ class Engine:
 
 
                         # distill_loss_negative = -self.distill_loss(student_features_selected_negative, student_features_selected, alpha = self.config.train["beta"])
-                        # student_features_selected = self.project_selected(student_features_selected)
+                        student_features_selected = self.project_selected(student_features_selected)
                         # student_features_selected_negative = self.project_selected(student_features_selected_negative)
                         # cosine_similarity_neg = torch.mean(torch.relu(cosine_similarity(student_features_selected_negative, student_features_selected, dim=1)))
                         
@@ -599,6 +602,7 @@ class Engine:
                         teacher_features = self.flat(teacher_features).mean(dim = 0)
                         student_features = self.project(self.flat(student_features).mean(dim = 0))
                         distill_loss =  self.distill_loss(student_features, teacher_features)
+                        
                 total_loss = base_loss + distill_loss
                 self.student_optimizer.zero_grad()
                 total_loss.backward()
@@ -629,7 +633,7 @@ class Engine:
                 wandb.log(current_metrics)
             self.save('student', path = self.config.networks["last_student_cp"])
             for k in current_metrics:
-                if "mean_sensitivity" in k:
+                if "mAP" in k:
                     current_metric = current_metrics[k]
             if current_metric >= best_metric:
                 best_metric = current_metric
@@ -687,63 +691,64 @@ class Engine:
             metric_dict = coco_metric(results_metric)[0]
             logging.getLogger().disabled = False
 
-            matched_results = matching_batch(
-                iou_fn=box_iou,
-                iou_thresholds=[0.1],
-                pred_boxes=[sample["boxes"].cpu().float().numpy() for sample in predictions_all],
-                pred_classes=[sample["labels"].cpu().float().numpy() for sample in predictions_all],
-                pred_scores=[sample["scores"].cpu().float().numpy() for sample in predictions_all],
-                gt_boxes=[sample["boxes"].cpu().float().numpy() for sample in targets_all],
-                gt_classes=[sample["labels"].cpu().float().numpy() for sample in targets_all],
-            )
-            targets = np.concatenate([matched_results[i][1]['dtMatches'][0] for i in range(len(matched_results))], axis = 0)
-            predictions = np.concatenate([matched_results[i][1]['dtScores'] for i in range(len(matched_results))], axis = 0)
-            num_imgs = len(matched_results)
-            # Calculate ROC curve
-            fpr, tpr, thresholds = roc_curve(targets, predictions)
-            roc_auc = auc(fpr, tpr)
-            metric_dict['roc_auc'] = roc_auc
-            all_thresholds = predictions.copy()
-            all_thresholds.sort()
-            fpis = []
-            sensitivities = []
-            sensitivities_at1fpi = []
-            sensitivities_at2fpi = []
-            sensitivities_at3fpi = []
-            sensitivities_at4fpi = []
-            mean_sensitivities = []
-            for threshold in all_thresholds:
-                conf_matrix = confusion_matrix(targets, predictions>=threshold, labels=[0,1])
-                tn, fp, fn, tp = conf_matrix.ravel()
-                fpi = fp/num_imgs
-                fpis.append(fpi)
-                sensitivity = tp / (tp + fn)
-                sensitivities.append(sensitivity)
-                if fpi == 1:
-                    sensitivities_at1fpi.append(sensitivity)
-                elif fpi == 2:
-                    sensitivities_at2fpi.append(sensitivity)
-                elif fpi == 3:
-                    sensitivities_at3fpi.append(sensitivity)
-                elif fpi == 4:
-                    sensitivities_at4fpi.append(sensitivity)
-            if len(sensitivities_at1fpi)>0:
-                mean_sensitivities.append(sum(sensitivities_at1fpi)/len(sensitivities_at1fpi))
-            if len(sensitivities_at2fpi)>0:
-                mean_sensitivities.append(sum(sensitivities_at2fpi)/len(sensitivities_at2fpi))
-            if len(sensitivities_at3fpi)>0:
-                mean_sensitivities.append(sum(sensitivities_at3fpi)/len(sensitivities_at3fpi))
-            if len(sensitivities_at4fpi)>0:
-                mean_sensitivities.append(sum(sensitivities_at4fpi)/len(sensitivities_at4fpi))
-            mean_sensitivity = sum(mean_sensitivities)/len(mean_sensitivities)
-            metric_dict['mean_sensitivity'] = mean_sensitivity
-            metric_dict['sensitivity@2fpi'] = sum(sensitivities_at2fpi)/len(sensitivities_at2fpi)
+
+            # matched_results = matching_batch(
+            #     iou_fn=box_iou,
+            #     iou_thresholds=[0.1],
+            #     pred_boxes=[sample["boxes"].cpu().float().numpy() for sample in predictions_all],
+            #     pred_classes=[sample["labels"].cpu().float().numpy() for sample in predictions_all],
+            #     pred_scores=[sample["scores"].cpu().float().numpy() for sample in predictions_all],
+            #     gt_boxes=[sample["boxes"].cpu().float().numpy() for sample in targets_all],
+            #     gt_classes=[sample["labels"].cpu().float().numpy() for sample in targets_all],
+            # )
+            # targets = np.concatenate([matched_results[i][1]['dtMatches'][0] for i in range(len(matched_results))], axis = 0)
+            # predictions = np.concatenate([matched_results[i][1]['dtScores'] for i in range(len(matched_results))], axis = 0)
+            # num_imgs = len(matched_results)
+            # # Calculate ROC curve
+            # fpr, tpr, thresholds = roc_curve(targets, predictions)
+            # roc_auc = auc(fpr, tpr)
+            # metric_dict['roc_auc'] = roc_auc
+            # all_thresholds = predictions.copy()
+            # all_thresholds.sort()
+            # fpis = []
+            # sensitivities = []
+            # sensitivities_at1fpi = []
+            # sensitivities_at2fpi = []
+            # sensitivities_at3fpi = []
+            # sensitivities_at4fpi = []
+            # mean_sensitivities = []
+            # for threshold in all_thresholds:
+            #     conf_matrix = confusion_matrix(targets, predictions>=threshold, labels=[0,1])
+            #     tn, fp, fn, tp = conf_matrix.ravel()
+            #     fpi = fp/num_imgs
+            #     fpis.append(fpi)
+            #     sensitivity = tp / (tp + fn)
+            #     sensitivities.append(sensitivity)
+            #     if fpi == 1:
+            #         sensitivities_at1fpi.append(sensitivity)
+            #     elif fpi == 2:
+            #         sensitivities_at2fpi.append(sensitivity)
+            #     elif fpi == 3:
+            #         sensitivities_at3fpi.append(sensitivity)
+            #     elif fpi == 4:
+            #         sensitivities_at4fpi.append(sensitivity)
+            # if len(sensitivities_at1fpi)>0:
+            #     mean_sensitivities.append(sum(sensitivities_at1fpi)/len(sensitivities_at1fpi))
+            # if len(sensitivities_at2fpi)>0:
+            #     mean_sensitivities.append(sum(sensitivities_at2fpi)/len(sensitivities_at2fpi))
+            # if len(sensitivities_at3fpi)>0:
+            #     mean_sensitivities.append(sum(sensitivities_at3fpi)/len(sensitivities_at3fpi))
+            # if len(sensitivities_at4fpi)>0:
+            #     mean_sensitivities.append(sum(sensitivities_at4fpi)/len(sensitivities_at4fpi))
+            # mean_sensitivity = sum(mean_sensitivities)/len(mean_sensitivities)
+            # metric_dict['mean_sensitivity'] = mean_sensitivity
+            # metric_dict['sensitivity@2fpi'] = sum(sensitivities_at2fpi)/len(sensitivities_at2fpi)
 
 
             new_dict = {}
             for k in metric_dict:
                 for c in classes[1:]: #remove background
-                    if c in k or k in ['roc_auc', 'mean_sensitivity', 'sensitivity@2fpi']: #not a background key
+                    if c in k:# or k in ['roc_auc', 'mean_sensitivity', 'sensitivity@2fpi']: #not a background key
                         new_dict[mode+": "+k] = metric_dict[k]
         return new_dict
 
@@ -798,14 +803,13 @@ class Engine:
 
 
 
-    def predict_2dto3d(self, volume_path, mode = 'student', temp_path="temp/"):
+    def predict_2dto3d(self, volume_path, mode = 'student', temp_path="pred_temp_folder/"):
         if mode == 'student':
             network = self.student
             transforms = self.student_testloader.dataset.transform
         elif mode == 'teacher':
             network = self.teacher
             transforms = self.teacher_testloader.dataset.transform      
-        # Read volume
         loader = LoadImage()
         img_volume_array = loader(volume_path)
         slice_shape = img_volume_array[0].shape
@@ -816,7 +820,6 @@ class Engine:
         # Write volume slices as 2d png files 
         for slice_number in range(4, number_of_slices-4):
             volume_slice = img_volume_array[slice_number, :, :]
-            # Delete extension from filename
             volume_file_name = os.path.splitext(volume_path)[0].split("/")[-1]
             volume_png_path = os.path.join(
                                     temp_path, 
@@ -825,7 +828,6 @@ class Engine:
             volume_slice = np.asarray(volume_slice)
             volume_slice = ((volume_slice - volume_slice.min()) / (volume_slice.max() - volume_slice.min()) * 255).astype('uint8')
             cv2.imwrite(volume_png_path, volume_slice)
-        # Predict slices individually then reconstruct 3D prediction
         network.eval()
         with torch.no_grad():
             volume_names = natsort.natsorted(os.listdir(temp_path))
@@ -848,32 +850,21 @@ class Engine:
             for batch in predict_loader:
                 batch["image"] = batch["image"].to(self.device)
                 pred = network(batch["image"])
-                pred_boxes += [sample["boxes"].cpu().numpy() for sample in pred],
-                pred_scores += [sample["scores"].cpu().numpy() for sample in pred],
-        # Delete temporary folder
+                sample_boxes, sample_scores = [], []
+                for sample in pred:
+                    sample_boxes.append(sample["boxes"].cpu().numpy())
+                    sample_scores.append(sample["scores"].cpu().numpy())
+                pred_boxes += sample_boxes,
+                pred_scores += sample_scores,
         shutil.rmtree(temp_path)
-        pred_boxes = ([torch.tensor(pred_boxes[i][0]) for i in range(len(pred_boxes))])
-        pred_scores = ([torch.tensor(pred_scores[i][0]) for i in range(len(pred_scores))])
-        pred_boxes = [Boxes(coord) for coord in pred_boxes]
+        scaling_factor_width = slice_shape[1] / self.config.transforms['size'][0]
+        scaling_factor_height = slice_shape[0] / self.config.transforms['size'][1]
+        for i in range(len(pred_boxes)):
+            pred_boxes[i][0][:,0] *= scaling_factor_width
+            pred_boxes[i][0][:,1] *= scaling_factor_height
+            pred_boxes[i][0][:,2] *= scaling_factor_width
+            pred_boxes[i][0][:,3] *= scaling_factor_height
+            pred_boxes[i] = Boxes(torch.tensor(pred_boxes[i][0]))
+            pred_scores[i] = torch.tensor(pred_scores[i][0])
         final_boxes_vol ,final_scores_vol, final_slices_vol = NMS_volume(pred_boxes, pred_scores)
-        if final_boxes_vol == []:
-            return torch.zeros((0,6)), torch.zeros((0))
-        resized_boxes = []
-        for boxes, scores, slices in zip(final_boxes_vol ,final_scores_vol, final_slices_vol):
-            scaling_factor_width = slice_shape[1] / self.config.transforms['size'][0]
-            scaling_factor_height = slice_shape[0] / self.config.transforms['size'][1]
-            boxes[0] = boxes[0] * scaling_factor_width
-            boxes[1] = boxes[1] * scaling_factor_height
-            boxes[2] = boxes[2] * scaling_factor_width
-            boxes[3] = boxes[3] * scaling_factor_height
-            resized_boxes.append(boxes)
-        final_boxes_vol = resized_boxes
-        final_boxes_3d = []
-        for box, slice in zip(final_boxes_vol, final_slices_vol):
-            zmin = max(0, slice - int(0.25 * number_of_slices)) # From DBTexs
-            zmax = min(slice + int(0.25 * number_of_slices), number_of_slices-1)
-            final_boxes_3d.append(torch.tensor([box[0], box[1], zmin, box[2], box[3], zmax]).int())
-        final_boxes_vol = final_boxes_3d
-        final_boxes_vol = torch.stack(final_boxes_vol)
-        final_scores_vol = torch.stack(final_scores_vol)
-        return final_boxes_vol, final_scores_vol
+        return final_boxes_vol, final_scores_vol, final_slices_vol
