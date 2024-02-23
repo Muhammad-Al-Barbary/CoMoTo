@@ -5,7 +5,7 @@
         "student_name": "dbt_2d",
         "teacher_name": "omidb_downsampled",
         "student_args": ["/home/muhammad/multimodal_learning/datasets/dbt/2d/", "/home/muhammad/multimodal_learning/datasets/dbt/metadata.csv"],
-        "teacher_args": ["/mnt/mia_images/breast/omi-db/iceberg_selection"],
+        "teacher_args": ["/home/muhammad/multimodal_learning/datasets/omidb"],
         "valid_split": 0.2,
         "test_split": 0.2,
         "batch_size": 1,

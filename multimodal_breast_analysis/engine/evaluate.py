@@ -8,6 +8,102 @@ import os
 import pandas as pd 
 from tqdm import tqdm 
 
+from multimodal_breast_analysis.engine.utils import prepare_batch 
+import gc
+from sklearn.metrics import roc_curve, auc
+from sklearn.metrics import confusion_matrix
+from monai.data.box_utils import box_iou
+from monai.apps.detection.metrics.matching import matching_batch
+
+
+
+def mammo_final_eval(engine, loader_mode = 'testing'):
+    threshold = [0.1]
+    if loader_mode=='training':
+        dataloader = engine.teacher_trainloader
+    elif loader_mode=='validation':
+        dataloader = engine.teacher_validloader
+    elif loader_mode=='testing':
+        dataloader = engine.teacher_testloader            
+    network = engine.teacher
+    print("Mammography final evaluation on", loader_mode, 'set')
+    network.eval()
+    with torch.no_grad():
+        all_targets = []
+        all_predictions = []
+        for batch_num, batch in enumerate(tqdm(dataloader, unit="iter")):
+            gc.collect()
+            torch.cuda.empty_cache()
+            images, targets = prepare_batch(batch, engine.device)
+            predictions = network(images)
+            all_targets += targets
+            all_predictions += predictions
+        results_metric = matching_batch(
+            iou_fn=box_iou,
+            iou_thresholds=threshold,
+            pred_boxes=[sample["boxes"].cpu().numpy() for sample in all_predictions],
+            pred_classes=[sample["labels"].cpu().numpy() for sample in all_predictions],
+            pred_scores=[sample["scores"].cpu().numpy() for sample in all_predictions],
+            gt_boxes=[sample["boxes"].cpu().numpy() for sample in all_targets],
+            gt_classes=[sample["labels"].cpu().numpy() for sample in all_targets],
+        )
+        predictions = np.concatenate([results_metric[i][1]['dtScores'] for i in range(len(results_metric))],0)
+        targets = np.concatenate([results_metric[i][1]['dtMatches'][0] for i in range(len(results_metric))], 0)
+        num_imgs = len([results_metric[i][1]['dtMatches'][0] for i in range(len(results_metric))])
+        # Calculate ROC curve
+        fpr, tpr, thresholds = roc_curve(targets, predictions)
+        roc_auc = auc(fpr, tpr)
+        print("AUC:", roc_auc)
+        all_thresholds = predictions.copy()
+        all_thresholds.sort()
+        fpis = []
+        sensitivities = []
+        sensitivities_at1fpi = []
+        sensitivities_at2fpi = []
+        sensitivities_at3fpi = []
+        sensitivities_at4fpi = []
+        for threshold in all_thresholds:
+            conf_matrix = confusion_matrix(targets, predictions>=threshold, labels=[0,1])
+            tn, fp, fn, tp = conf_matrix.ravel()
+            fpi = fp/num_imgs
+            fpis.append(fpi)
+            sensitivity = tp / (tp + fn)
+            sensitivities.append(sensitivity)
+            if fpi == 1:
+                sensitivities_at1fpi.append(sensitivity)
+            elif fpi == 2:
+                sensitivities_at2fpi.append(sensitivity)
+            elif fpi == 3:
+                sensitivities_at3fpi.append(sensitivity)
+            elif fpi == 4:
+                sensitivities_at4fpi.append(sensitivity)
+        sensitivity_at1fpi = sum(sensitivities_at1fpi)/len(sensitivities_at1fpi)
+        sensitivity_at2fpi = sum(sensitivities_at2fpi)/len(sensitivities_at2fpi)
+        sensitivity_at3fpi = sum(sensitivities_at3fpi)/len(sensitivities_at3fpi)
+        sensitivity_at4fpi = sum(sensitivities_at4fpi)/len(sensitivities_at4fpi)
+        mean_sensitivity = (sensitivity_at1fpi + sensitivity_at2fpi + sensitivity_at3fpi + sensitivity_at4fpi) / 4
+        print("Mean Sensitivity:", mean_sensitivity)
+        print("Sensitivity@2FPI:", sensitivity_at2fpi)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 def evaluate(
     labels_fp,
@@ -144,9 +240,9 @@ def _distance(box_pred, box_true) -> float:
 
 
 
-def write_csv (final_boxes_vol, final_scores_vol, final_slices_vol, client, episode, view, total_slices, output_path = 'output_folder/', output_csv = 'test_results.csv'):
+def write_csv (final_boxes_vol, final_scores_vol, final_slices_vol, client, episode, view, total_slices, output_path = 'output_folder/', pred_csv = 'test_results.csv'):
     depth = 0
-    with open(output_path+output_csv, 'a+', newline='') as file:
+    with open(output_path+pred_csv, 'a+', newline='') as file:
         writer = csv.writer(file)
         for box, score,slice_num in zip(final_boxes_vol,final_scores_vol, final_slices_vol):
 
@@ -155,24 +251,23 @@ def write_csv (final_boxes_vol, final_scores_vol, final_slices_vol, client, epis
 
 
 
-def dbt_final_eval(engine, metadata_path = None, output_path = 'output_folder/', output_csv = 'test_results.csv', target_csv = 'targets.csv', temp_path="pred_temp_folder/"):
+def dbt_final_eval(engine, metadata_path = None, output_path = 'output_folder/', pred_csv = 'test_results.csv', target_csv = 'targets.csv', temp_path="pred_temp_folder/"):
     if metadata_path is None:
         metadata_path = engine.config.data['student_args'][1]
     df = pd.read_csv(metadata_path)
-    if os.path.exists(output_path+target_csv):
-        os.remove(output_path+target_csv)
-    if os.path.exists(output_path+output_csv):
-        os.remove(output_path+output_csv)
-
     # target csv
-    with open(output_path+output_csv, 'w+', newline='') as file:
+    if not os.path.exists(output_path+target_csv):
+        test_clients = [engine.student_testloader.dataset[i]['PatientID'] for i in range(len(engine.student_testloader.dataset))]
+        target_df = df[df['PatientID'].isin(test_clients)]
+        target_df.to_csv(output_path+target_csv, index=False)
+    else:
+        target_df = pd.read_csv(output_path+target_csv)
+    # prediction csv
+    if os.path.exists(output_path+pred_csv):
+        os.remove(output_path+pred_csv)
+    with open(output_path+pred_csv, 'w+', newline='') as file:
         writer = csv.writer(file)
         writer.writerow(['PatientID','StudyUID','View','X','Width','Y','Height','Z','Depth','Score'])
-    test_clients = [engine.student_testloader.dataset[i]['PatientID'] for i in range(len(engine.student_testloader.dataset))]
-    target_df = df[df['PatientID'].isin(test_clients)]
-    target_df.to_csv(output_path+target_csv, index=False) 
-    
-    # prediction csv
     target_df = target_df.drop_duplicates(subset='path') # predict each volume only once
     for index, view_series in tqdm(target_df.iterrows()):
         client = view_series["PatientID"]
@@ -181,6 +276,6 @@ def dbt_final_eval(engine, metadata_path = None, output_path = 'output_folder/',
         episode = view_series["StudyUID"]
         num_slices = view_series["VolumeSlices"]
         final_boxes_vol, final_scores_vol, final_slices_vol = engine.predict_2dto3d(image_path, temp_path = temp_path)
-        write_csv(final_boxes_vol, final_scores_vol, final_slices_vol, client, episode, view, num_slices, output_path = 'output_folder/', output_csv = 'test_results.csv')
-    results = evaluate(labels_fp = output_path+target_csv, boxes_fp = output_path+target_csv, predictions_fp = output_path+output_csv)
+        write_csv(final_boxes_vol, final_scores_vol, final_slices_vol, client, episode, view, num_slices, output_path = 'output_folder/', pred_csv = pred_csv)
+    results = evaluate(labels_fp = output_path+target_csv, boxes_fp = output_path+target_csv, predictions_fp = output_path+pred_csv)
     return results

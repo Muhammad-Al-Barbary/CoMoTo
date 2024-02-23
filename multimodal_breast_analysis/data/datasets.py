@@ -72,7 +72,7 @@ def omidb_downsampled(img_dir):
     return dataset, groups
 
     
-def dbt_2d(data_path, metadata_path):
+def dbt_2d(data_path, metadata_path, central_only = True):
     metadata = pd.read_csv(metadata_path)
     # metadata = metadata.drop_duplicates(subset=['PatientID', 'StudyUID', 'View'], keep=False) #single lesion only
     dataset = []    
@@ -81,11 +81,14 @@ def dbt_2d(data_path, metadata_path):
         patient_id, study_id, view, slice = path.split('.')[0].split('_')
         image_path = data_path + path
         rows = metadata[(metadata['PatientID'] == patient_id) & (metadata['StudyUID'] == study_id) & (metadata['View'] == view)]
-        rows = rows[(float(slice) >= rows['Slice'] - 0.25 * rows['VolumeSlices']) & (float(slice) <= rows['Slice'] + 0.25 * rows['VolumeSlices'])]
+        if central_only:
+            rows = rows[float(slice) == rows['Slice']]
+        else: # 25% around central slice according to challenge
+            rows = rows[(float(slice) >= rows['Slice'] - 0.25 * rows['VolumeSlices']) & (float(slice) <= rows['Slice'] + 0.25 * rows['VolumeSlices'])]
         boxes = rows[['xmin', 'ymin', 'xmax', 'ymax']].values.astype(int)
         labels = np.ones(boxes.shape[0])
         central_slice = rows['Slice'].values
-        if int(slice) in central_slice:
+        if len(boxes) != 0:
             dataset.append({"image": image_path, "boxes": boxes, "labels": labels,
                             "PatientID": patient_id, "StudyUID": study_id, "View": view, "Slice":slice, "CentralSlice": central_slice})
             groups.append(patient_id)

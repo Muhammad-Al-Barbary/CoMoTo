@@ -842,7 +842,7 @@ class Engine:
             predict_loader = MonaiLoader(
                 predict_set,
                 batch_size = 1,
-                num_workers = 0,
+                num_workers = 1,
                 pin_memory = False,
             )
             pred_boxes = []

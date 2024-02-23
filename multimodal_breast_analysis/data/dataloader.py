@@ -6,15 +6,27 @@ from random import sample
 
 class DataLoader:
     def __init__(self, data, valid_split, test_split, seed):
-        gss = GroupShuffleSplit(n_splits=1, test_size=valid_split+test_split, random_state=seed)
-        train_indices, eval_indices = next(gss.split(data[0], groups=data[1]))
-        gss_eval = GroupShuffleSplit(n_splits=1, test_size=valid_split/(valid_split+test_split), random_state=seed)
-        eval_data = [data[0][i] for i in eval_indices]
-        eval_groups = [data[1][i] for i in eval_indices]
-        test_indices, valid_indices = next(gss_eval.split(eval_data, groups=eval_groups))
-        self.train_data = [data[0][train_idx] for train_idx in train_indices]
-        self.valid_data = [eval_data[valid_idx] for valid_idx in valid_indices]
-        self.test_data = [eval_data[test_idx] for test_idx in test_indices]
+        if valid_split == 0 and test_split == 0:
+            self.train_data = data[0]
+            self.valid_data = []
+            self.test_data = []
+        else: # split to eval
+            gss = GroupShuffleSplit(n_splits=1, test_size=valid_split+test_split, random_state=seed)
+            train_indices, eval_indices = next(gss.split(data[0], groups=data[1]))
+            gss_eval = GroupShuffleSplit(n_splits=1, test_size=valid_split/(valid_split+test_split), random_state=seed)
+            eval_data = [data[0][i] for i in eval_indices]
+            eval_groups = [data[1][i] for i in eval_indices]
+            if test_split == 0:
+                self.valid_data = eval_data
+                self.test_data = []
+            elif valid_split == 0:
+                self.test_data = eval_data
+                self.valid_data = []
+            else: # split eval to test and valid
+                test_indices, valid_indices = next(gss_eval.split(eval_data, groups=eval_groups))
+                self.train_data = [data[0][train_idx] for train_idx in train_indices]
+                self.valid_data = [eval_data[valid_idx] for valid_idx in valid_indices]
+                self.test_data = [eval_data[test_idx] for test_idx in test_indices]
          
     def trainloader(self, transforms, batch_size, shuffle = True, train_ratio = 1):
         dataset = Dataset(sample(self.train_data, int(train_ratio * len(self.train_data))), transform = transforms)
