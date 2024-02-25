@@ -7,6 +7,28 @@ from typing import List, Tuple
 import torch
 from torch import device
 
+
+def extract_critical_features(batch_features, batch_boxes, image_size):
+    batch_critical_features = torch.zeros((batch_features.shape[0], batch_features.shape[1], 9), device = batch_features.device)
+    scaling_ratio = (batch_features.shape[-1]) / (image_size[-1])
+    for idx, (sample_features, sample_boxes) in enumerate(zip(batch_features, batch_boxes)):
+        scaled_boxes = (sample_boxes * scaling_ratio).int()
+        xmin = scaled_boxes[:, 0].clamp(max=sample_features.shape[-1]-1)
+        ymin = scaled_boxes[:, 1].clamp(max=sample_features.shape[-2]-1)
+        xmax = scaled_boxes[:, 2].clamp(max=sample_features.shape[-1]-1)
+        ymax = scaled_boxes[:, 3].clamp(max=sample_features.shape[-2]-1)
+        batch_critical_features[idx,:,0] = sample_features[:, ymin, xmin].mean(-1) # average over all the boxes of the sample
+        batch_critical_features[idx,:,1] = sample_features[:, ymin, xmax].mean(-1) 
+        batch_critical_features[idx,:,2] = sample_features[:, ymax, xmin].mean(-1)
+        batch_critical_features[idx,:,3] = sample_features[:, ymax, xmax].mean(-1)
+        batch_critical_features[idx,:,4] = sample_features[:, (ymin + ymax) // 2, (xmin + xmax) // 2].mean(-1)
+        batch_critical_features[idx,:,5] = sample_features[:, (ymin + ymax) // 2, xmin].mean(-1)
+        batch_critical_features[idx,:,6] = sample_features[:, (ymin + ymax) // 2, xmax].mean(-1)
+        batch_critical_features[idx,:,7] = sample_features[:, ymin, (xmin + xmax) // 2].mean(-1)
+        batch_critical_features[idx,:,8] = sample_features[:, ymax, (xmin + xmax) // 2].mean(-1)
+    return batch_critical_features
+
+
 def prepare_batch(batch, device):
   image = [batch[i]["image"].to(device) for i in range(len(batch))]
   targets = [{"boxes":batch[i]["boxes"].to(device), "labels":batch[i]["labels"].to(device)} for i in range(len(batch))]

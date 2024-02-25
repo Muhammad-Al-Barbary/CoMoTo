@@ -239,26 +239,28 @@ def _distance(box_pred, box_true) -> float:
 
 
 
-
 def write_csv (final_boxes_vol, final_scores_vol, final_slices_vol, client, episode, view, total_slices, output_path = 'output_folder/', pred_csv = 'test_results.csv'):
     depth = 0
-    with open(output_path+pred_csv, 'a+', newline='') as file:
+    rows_to_write = []
+    for box, score, slice_num in zip(final_boxes_vol, final_scores_vol, final_slices_vol):
+        row = [client, episode, view, int(box[0]), int(box[2] - box[0]), int(box[1]), int(box[3] - box[1]),
+            max(0, slice_num - depth), min(total_slices - 1, slice_num + depth) - max(0, slice_num - depth), float(score)]
+        rows_to_write.append(row)
+    with open(output_path + pred_csv, 'a+', newline='') as file:
         writer = csv.writer(file)
-        for box, score,slice_num in zip(final_boxes_vol,final_scores_vol, final_slices_vol):
-
-            writer.writerow([client, episode, view, int(box[0]),int(box[2]-box[0]), int(box[1]), int(box[3]-box[1]),
-                  max(0,slice_num-depth),  min(total_slices-1, slice_num+depth)-max(0,slice_num-depth),float(score)])
+        writer.writerows(rows_to_write)
 
 
 
 def dbt_final_eval(engine, metadata_path = None, output_path = 'output_folder/', pred_csv = 'test_results.csv', target_csv = 'targets.csv', temp_path="pred_temp_folder/"):
-    if metadata_path is None:
-        metadata_path = engine.config.data['student_args'][1]
-    df = pd.read_csv(metadata_path)
+    if metadata_path is None: #TODO: Fix this hardcoding
+        # metadata_path = engine.config.data['student_args'][1]
+        metadata_path = "/home/muhammad/multimodal_learning/datasets/dbt/metadata_test.csv"
     # target csv
+        df = pd.read_csv(metadata_path)
     if not os.path.exists(output_path+target_csv):
-        test_clients = [engine.student_testloader.dataset[i]['PatientID'] for i in range(len(engine.student_testloader.dataset))]
-        target_df = df[df['PatientID'].isin(test_clients)]
+    #     # target_df = df[df['PatientID'].isin([engine.student_testloader.dataset[i]['PatientID'] for i in range(len(engine.student_testloader.dataset))])]
+        target_df = df
         target_df.to_csv(output_path+target_csv, index=False)
     else:
         target_df = pd.read_csv(output_path+target_csv)
@@ -269,12 +271,12 @@ def dbt_final_eval(engine, metadata_path = None, output_path = 'output_folder/',
         writer = csv.writer(file)
         writer.writerow(['PatientID','StudyUID','View','X','Width','Y','Height','Z','Depth','Score'])
     target_df = target_df.drop_duplicates(subset='path') # predict each volume only once
-    for index, view_series in tqdm(target_df.iterrows()):
+    for index, view_series in tqdm(target_df.iterrows(), total=len(target_df)):
         client = view_series["PatientID"]
         view = view_series["View"]
         image_path = view_series["path"]
         episode = view_series["StudyUID"]
-        num_slices = view_series["VolumeSlices"]
+        num_slices = int(view_series["VolumeSlices"])
         final_boxes_vol, final_scores_vol, final_slices_vol = engine.predict_2dto3d(image_path, temp_path = temp_path)
         write_csv(final_boxes_vol, final_scores_vol, final_slices_vol, client, episode, view, num_slices, output_path = 'output_folder/', pred_csv = pred_csv)
     results = evaluate(labels_fp = output_path+target_csv, boxes_fp = output_path+target_csv, predictions_fp = output_path+pred_csv)

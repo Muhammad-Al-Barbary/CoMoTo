@@ -28,19 +28,11 @@ def main(args):
 
         print("\n\nLAST METRICS:")
         engine.load(mode="student", path=config.networks["last_student_cp"])
-        print("     Final Validation:", engine.test('student', 'validation'))
-        print("\n")
-        print("     Final Testing:", engine.test('student', 'testing'))
-        print('\n\n')
-        print("     Final Metrics:", dbt_final_eval(engine, pred_csv = "last_"+args.config_name+'.csv', temp_path="temp_"+args.config_name+'/'))
-
+        print(dbt_final_eval(engine, pred_csv = "last_"+args.config_name+'.csv', temp_path="temp_"+args.config_name+'/'))
+        print("\n\n\n\n")
         print("\n\nBEST METRICS:")
         engine.load(mode="student", path=config.networks["best_student_cp"])
-        print("     Final Validation:", engine.test('student', 'validation'))
-        print("\n")
-        print("     Final Testing:", engine.test('student', 'testing'))
-        print('\n\n')
-        print("     Final Metrics:", dbt_final_eval(engine, pred_csv = "best_"+args.config_name+'.csv', temp_path="temp_"+args.config_name+'/'))
+        print(dbt_final_eval(engine, pred_csv = "best_"+args.config_name+'.csv', temp_path="temp_"+args.config_name+'/'))
 
 
 if __name__ == "__main__":

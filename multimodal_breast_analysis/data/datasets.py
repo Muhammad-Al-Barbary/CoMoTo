@@ -92,5 +92,26 @@ def dbt_2d(data_path, metadata_path, central_only = True):
             dataset.append({"image": image_path, "boxes": boxes, "labels": labels,
                             "PatientID": patient_id, "StudyUID": study_id, "View": view, "Slice":slice, "CentralSlice": central_slice})
             groups.append(patient_id)
+    
+
+
+    #TODO: Fix this hardcoded merge of training and validation sets
+    data_path = "/home/muhammad/multimodal_learning/datasets/dbt/valid/2d/"
+    metadata = pd.read_csv("/home/muhammad/multimodal_learning/datasets/dbt/metadata_valid.csv")
+    for path in os.listdir(data_path):
+        patient_id, study_id, view, slice = path.split('.')[0].split('_')
+        image_path = data_path + path
+        rows = metadata[(metadata['PatientID'] == patient_id) & (metadata['StudyUID'] == study_id) & (metadata['View'] == view)]
+        if central_only:
+            rows = rows[float(slice) == rows['Slice']]
+        else:
+            rows = rows[(float(slice) >= rows['Slice'] - 0.25 * rows['VolumeSlices']) & (float(slice) <= rows['Slice'] + 0.25 * rows['VolumeSlices'])]
+        boxes = rows[['xmin', 'ymin', 'xmax', 'ymax']].values.astype(int)
+        labels = np.ones(boxes.shape[0])
+        central_slice = rows['Slice'].values
+        if len(boxes) != 0:
+            dataset.append({"image": image_path, "boxes": boxes, "labels": labels,
+                            "PatientID": patient_id, "StudyUID": study_id, "View": view, "Slice":slice, "CentralSlice": central_slice})
+            groups.append(patient_id)
     return dataset, groups
 

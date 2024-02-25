@@ -7,8 +7,8 @@
         "student_args": ["/home/muhammad/multimodal_learning/datasets/dbt/2d/", "/home/muhammad/multimodal_learning/datasets/dbt/metadata.csv"],
         "teacher_args": ["/home/muhammad/multimodal_learning/datasets/omidb"],
         "valid_split": 0.2,
-        "test_split": 0.2,
-        "batch_size": 1,
+        "test_split": 0,
+        "batch_size": 8,
         "shuffle": true,
         "train_ratio": 0.1
     },
