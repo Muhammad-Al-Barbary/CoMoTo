@@ -52,9 +52,6 @@ def extract_noncritical_features(features, boxes, image_size, num_points = 9):
         boxes_mask = torch.ones((features.shape[-2], features.shape[-1]))
         for xmin,ymin,xmax,ymax in (boxes[i] * scaling_ratio).int():
             boxes_mask[ymin:ymax, xmin:xmax] = 0  
-        import matplotlib.pyplot as plt
-        plt.imshow(boxes_mask.detach().cpu().numpy())
-        plt.show()
         positive_indices = torch.nonzero(boxes_mask == 1)
         shuffled_indices = positive_indices[torch.randperm(positive_indices.size(0))]
         sampled_indices = shuffled_indices[:min(num_points, shuffled_indices.size(0))].t()
