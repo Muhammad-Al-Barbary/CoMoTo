@@ -215,6 +215,8 @@ class Engine:
             print(current_metrics)
             # for logging in a single dictionary
             current_metrics["teacher_loss"] = epoch_total_loss
+            current_metrics["teacher_base_loss"] = epoch_detection_loss
+            current_metrics["teacher_similarity_loss"] = epoch_similarity_loss
             if self.config.wandb:
                 wandb.log(current_metrics)
             self.save('teacher', path = self.config.networks["last_teacher_cp"])
