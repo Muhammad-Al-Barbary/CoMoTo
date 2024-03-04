@@ -1,7 +1,4 @@
-import os
-from torchvision.io import read_image
 import torch
-from torchvision.ops.boxes import masks_to_boxes
 import matplotlib.pyplot as plt
 from torchvision.utils import draw_bounding_boxes
 import warnings
@@ -10,7 +7,7 @@ import numpy as np
 import pydicom
 
 def visualize_batch(model, images, targets, class_name, figsize=(10,10), threshold = 0.25):
-    warnings.filterwarnings("ignore") #disbale warning for empty boxes
+    warnings.filterwarnings("ignore") #disable warning for empty boxes
     model.eval()
     predictions = model(images)
     random_idx = randint(0, len(images) - 1)
@@ -45,12 +42,11 @@ def visualize_batch(model, images, targets, class_name, figsize=(10,10), thresho
     plt.subplot(1,2,2)
     plt.title("prediction")
     plt.axis("off")
-    
     print(f"boxes:{pred_boxes}, labels:{pred_labels}")
-
     output_image = draw_bounding_boxes(image, pred_boxes, pred_labels, colors="red", width = int(image.shape[1]/250));
     plt.imshow(output_image.permute(1, 2, 0).cpu())
     plt.show()
+
 
 def visualize_dataset_sample(sample, figsize = (10,10)):
     if sample["image"].split(".")[-1] in ["png", "jpg", "jpeg"]:

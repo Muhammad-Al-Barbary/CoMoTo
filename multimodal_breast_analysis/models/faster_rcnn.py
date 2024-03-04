@@ -30,6 +30,7 @@ def faster_rcnn(parameters):
         box_roi_pool=roi_pooler,
     )
 
+
 def faster_rcnn_fpn(parameters):
     num_classes = parameters["num_classes"]
     weights = parameters["weights"]

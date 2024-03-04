@@ -1,5 +1,4 @@
 from monai.data import Dataset, DataLoader as MonaiLoader
-from sklearn.model_selection import train_test_split
 from sklearn.model_selection import GroupShuffleSplit
 from random import sample
 
@@ -29,7 +28,9 @@ class DataLoader:
                 self.test_data = [eval_data[test_idx] for test_idx in test_indices]
 
     def trainloader(self, transforms, batch_size, shuffle = True, train_ratio = 1):
-        dataset = Dataset(sample(self.train_data, int(train_ratio * len(self.train_data))), transform = transforms)
+        if train_ratio != 1:
+            self.train_data = sample(self.train_data, int(train_ratio * len(self.train_data)))
+        dataset = Dataset(self.train_data, transform = transforms)
         dataloader = MonaiLoader(dataset, batch_size = batch_size, shuffle = shuffle, collate_fn=lambda batch: batch)
         return dataloader
 

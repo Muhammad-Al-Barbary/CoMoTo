@@ -14,6 +14,7 @@ class ResNet(ResNet):
         x = self.layer4(x)
         return x
     
+
 class SwinTransformer(SwinTransformer):
     def forward(self, x, normalize=True):
             x = self.patch_embed(x)
@@ -25,11 +26,13 @@ class SwinTransformer(SwinTransformer):
             x = self.proj_out(x, normalize)
             return x
     
+
 def resnet18():
     resnet18 = ResNet(BasicBlock, [2, 2, 2, 2])
     resnet18.load_state_dict(ResNet18_Weights.IMAGENET1K_V1.get_state_dict(progress=True))
     resnet18.out_channels = 512
     return resnet18
+
 
 def resnet34():
     resnet34 = ResNet(BasicBlock, [3, 4, 6, 3])
@@ -37,11 +40,13 @@ def resnet34():
     resnet34.out_channels = 512
     return resnet34
 
+
 def resnet50():
     resnet50 = ResNet(Bottleneck, [3, 4, 6, 3])
     resnet50.load_state_dict(ResNet50_Weights.IMAGENET1K_V1.get_state_dict(progress=True))
     resnet50.out_channels = 2048
     return resnet50
+
 
 def resnet101():
     resnet101 = ResNet(Bottleneck, [3, 4, 23, 3])

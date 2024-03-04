@@ -1,57 +1,9 @@
-# set of functions to return list of dicts for every dataset
 import os
-from torchvision.io import read_image
-from torchvision.ops.boxes import masks_to_boxes
-import torch
 import pandas as pd
 import numpy as np
 
-def penn_fudan(root):
-    imgs = list(sorted(os.listdir(os.path.join(root, "PNGImages"))))
-    masks = list(sorted(os.listdir(os.path.join(root, "PedMasks"))))
-    data = []
-    groups = []
-    for idx, (image, mask) in enumerate(zip(imgs, masks)):
-            img_path = os.path.join(root, "PNGImages", image)
-            mask_path = os.path.join(root, "PedMasks", mask)
-            mask = read_image(mask_path)
-            obj_ids = torch.unique(mask)
-            obj_ids = obj_ids[1:]
-            num_objs = len(obj_ids)
-            masks = (mask == obj_ids[:, None, None]).to(dtype=torch.uint8)
-            boxes = masks_to_boxes(masks)
-            labels = torch.ones((num_objs,), dtype=torch.int64)
-            target = {}
-            target["image"] = img_path
-            target["boxes"] = boxes
-            target["labels"] = labels
-            data.append(target)
-            groups.append(idx)
-    return data, groups
 
-
-def omidb(csv_path):
-    df = pd.read_csv(csv_path)
-    df = df.loc[df["manufacturer"] == 'HOLOGIC, Inc.']
-    df = df.loc[df["num_marks"] == 1]
-    # df = df.loc[df["view_position"] == 'CC']
-
-    dataset = []
-    groups = []
-    for i in range(len(df)):
-        row = df.iloc[i]
-        image_path = row["path"]
-        boxes = np.asarray([row["bbox"].replace('(', '').replace(')', '').split(',')], dtype = int)
-        if boxes.min() < 0:
-            continue
-        labels = np.asarray([1])
-        dataset.append({"image": image_path, "boxes": boxes, "labels": labels})
-        groups.append([row['client']])
-    return dataset, groups
-
-
-
-def omidb_downsampled(img_dir):
+def omidb(img_dir):
     csv_file = os.path.join(img_dir, "omidb-selection.csv")
     df = pd.read_csv(csv_file)
     df = df.loc[df["scanner"] == 'HOLOGIC']
@@ -72,9 +24,8 @@ def omidb_downsampled(img_dir):
     return dataset, groups
 
     
-def dbt_2d(data_path, metadata_path, central_only = True):
+def dbt(data_path, metadata_path, central_only = True):
     metadata = pd.read_csv(metadata_path)
-    # metadata = metadata.drop_duplicates(subset=['PatientID', 'StudyUID', 'View'], keep=False) #single lesion only
     dataset = []    
     groups = []
     for path in os.listdir(data_path):
@@ -92,12 +43,9 @@ def dbt_2d(data_path, metadata_path, central_only = True):
             dataset.append({"image": image_path, "boxes": boxes, "labels": labels,
                             "PatientID": patient_id, "StudyUID": study_id, "View": view, "Slice":slice, "CentralSlice": central_slice})
             groups.append(patient_id)
-    
-
-
     #TODO: Fix this hardcoded merge of training and validation sets
-    data_path = "/home/muhammad/multimodal_learning/datasets/dbt/valid/2d/"
-    metadata = pd.read_csv("/home/muhammad/multimodal_learning/datasets/dbt/metadata_valid.csv")
+    data_path = "../datasets/dbt/valid/2d/"
+    metadata = pd.read_csv("../datasets/dbt/metadata_valid.csv")
     for path in os.listdir(data_path):
         patient_id, study_id, view, slice = path.split('.')[0].split('_')
         image_path = data_path + path

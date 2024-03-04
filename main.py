@@ -4,33 +4,20 @@ from multimodal_breast_analysis.engine.evaluate import dbt_final_eval, mammo_fin
 import argparse
 
 
-
-
 def main(args):
     config = load_configs(args.config_name)
     engine = Engine(config)
-    
     if args.mammo:
         engine.warmup()
         engine.load(mode="teacher", path=config.networks["best_teacher_cp"])
-        print()
-        print("Final Validation:", engine.test('teacher', 'validation'))
-        print()
-        print("Final Testing:", engine.test('teacher', 'testing'))
-        print()
-        mammo_final_eval(engine)
-
+        print("\n\TESTING METRICS:")
+        print(engine.test('teacher', 'testing'))
+        print(mammo_final_eval(engine))
     if args.dbt:
         engine.load(mode="teacher", path=config.networks["best_teacher_cp"])
         engine.load(mode="student", path=config.networks["best_teacher_cp"])
         engine.train()
-
-
-        print("\n\nLAST METRICS:")
-        engine.load(mode="student", path=config.networks["last_student_cp"])
-        print(dbt_final_eval(engine, pred_csv = "last_"+args.config_name+'.csv', temp_path="temp_"+args.config_name+'/'))
-        print("\n\n\n\n")
-        print("\n\nBEST METRICS:")
+        print("\n\TESTNIG METRICS:")
         engine.load(mode="student", path=config.networks["best_student_cp"])
         print(dbt_final_eval(engine, pred_csv = "best_"+args.config_name+'.csv', temp_path="temp_"+args.config_name+'/'))
 

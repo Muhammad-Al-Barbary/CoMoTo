@@ -1,4 +1,3 @@
-from torchvision.ops import MultiScaleRoIAlign
 from torchvision.models.detection import RetinaNet
 from torchvision.models.detection.anchor_utils import AnchorGenerator
 from multimodal_breast_analysis.models.backbones import resnet18, resnet34, resnet50, resnet101, swin_transformer

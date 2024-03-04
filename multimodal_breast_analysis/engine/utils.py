@@ -8,31 +8,66 @@ import torch
 from torch import device
 
 
-def extract_critical_features(batch_features, batch_boxes, image_size):
-    batch_critical_features = torch.zeros((batch_features.shape[0], batch_features.shape[1], 9), device = batch_features.device)
-    scaling_ratio = (batch_features.shape[-1]) / (image_size[-1])
-    for idx, (sample_features, sample_boxes) in enumerate(zip(batch_features, batch_boxes)):
+def extract_critical_features(features, boxes, image_size, num_points = 9):
+    assert num_points in [1, 4, 5, 9]
+    critical_features = torch.zeros((features.shape[0], features.shape[1], num_points), device = features.device)
+    scaling_ratio = (features.shape[-1]) / (image_size[-1])
+    for idx, (sample_features, sample_boxes) in enumerate(zip(features, boxes)):
         scaled_boxes = (sample_boxes * scaling_ratio).int()
         xmin = scaled_boxes[:, 0].clamp(max=sample_features.shape[-1]-1)
         ymin = scaled_boxes[:, 1].clamp(max=sample_features.shape[-2]-1)
         xmax = scaled_boxes[:, 2].clamp(max=sample_features.shape[-1]-1)
         ymax = scaled_boxes[:, 3].clamp(max=sample_features.shape[-2]-1)
-        batch_critical_features[idx,:,0] = sample_features[:, ymin, xmin].mean(-1) # average over all the boxes of the sample
-        batch_critical_features[idx,:,1] = sample_features[:, ymin, xmax].mean(-1) 
-        batch_critical_features[idx,:,2] = sample_features[:, ymax, xmin].mean(-1)
-        batch_critical_features[idx,:,3] = sample_features[:, ymax, xmax].mean(-1)
-        batch_critical_features[idx,:,4] = sample_features[:, (ymin + ymax) // 2, (xmin + xmax) // 2].mean(-1)
-        batch_critical_features[idx,:,5] = sample_features[:, (ymin + ymax) // 2, xmin].mean(-1)
-        batch_critical_features[idx,:,6] = sample_features[:, (ymin + ymax) // 2, xmax].mean(-1)
-        batch_critical_features[idx,:,7] = sample_features[:, ymin, (xmin + xmax) // 2].mean(-1)
-        batch_critical_features[idx,:,8] = sample_features[:, ymax, (xmin + xmax) // 2].mean(-1)
-    return batch_critical_features
+        #TODO: Fix this
+        if num_points == 1: # center only
+            critical_features[idx,:,0] = sample_features[:, (ymin + ymax) // 2, (xmin + xmax) // 2].mean(-1)
+        if num_points == 4: # corners
+            critical_features[idx,:,0] = sample_features[:, ymin, xmin].mean(-1)
+            critical_features[idx,:,1] = sample_features[:, ymin, xmax].mean(-1) 
+            critical_features[idx,:,2] = sample_features[:, ymax, xmin].mean(-1)
+            critical_features[idx,:,3] = sample_features[:, ymax, xmax].mean(-1)
+        if num_points == 5: # center and midpoints
+            critical_features[idx,:,0] = sample_features[:, (ymin + ymax) // 2, (xmin + xmax) // 2].mean(-1)
+            critical_features[idx,:,1] = sample_features[:, (ymin + ymax) // 2, xmin].mean(-1)
+            critical_features[idx,:,2] = sample_features[:, (ymin + ymax) // 2, xmax].mean(-1)
+            critical_features[idx,:,3] = sample_features[:, ymin, (xmin + xmax) // 2].mean(-1)
+            critical_features[idx,:,4] = sample_features[:, ymax, (xmin + xmax) // 2].mean(-1)
+        if num_points == 9:  # center and midpoints and edges
+            critical_features[idx,:,0] = sample_features[:, ymin, xmin].mean(-1) # average over all the boxes of the sample
+            critical_features[idx,:,1] = sample_features[:, ymin, xmax].mean(-1) 
+            critical_features[idx,:,2] = sample_features[:, ymax, xmin].mean(-1)
+            critical_features[idx,:,3] = sample_features[:, ymax, xmax].mean(-1)
+            critical_features[idx,:,4] = sample_features[:, (ymin + ymax) // 2, (xmin + xmax) // 2].mean(-1)
+            critical_features[idx,:,5] = sample_features[:, (ymin + ymax) // 2, xmin].mean(-1)
+            critical_features[idx,:,6] = sample_features[:, (ymin + ymax) // 2, xmax].mean(-1)
+            critical_features[idx,:,7] = sample_features[:, ymin, (xmin + xmax) // 2].mean(-1)
+            critical_features[idx,:,8] = sample_features[:, ymax, (xmin + xmax) // 2].mean(-1)
+    return critical_features
+
+
+def extract_noncritical_features(features, boxes, image_size, num_points = 9):
+    features_selected_negative = []
+    scaling_ratio = (features.shape[-1]) / (image_size[-1])
+    for i in range(len(boxes)):
+        boxes_mask = torch.ones((features.shape[-2], features.shape[-1]))
+        for xmin,ymin,xmax,ymax in (boxes[i] * scaling_ratio).int():
+            boxes_mask[ymin:ymax, xmin:xmax] = 0  
+        import matplotlib.pyplot as plt
+        plt.imshow(boxes_mask.detach().cpu().numpy())
+        plt.show()
+        positive_indices = torch.nonzero(boxes_mask == 1)
+        shuffled_indices = positive_indices[torch.randperm(positive_indices.size(0))]
+        sampled_indices = shuffled_indices[:min(num_points, shuffled_indices.size(0))].t()
+        features_selected_negative.append(features[i, :, sampled_indices[0], sampled_indices[1]])
+    features_selected_negative = torch.stack(features_selected_negative, dim = 0)
+    return features_selected_negative
 
 
 def prepare_batch(batch, device):
   image = [batch[i]["image"].to(device) for i in range(len(batch))]
   targets = [{"boxes":batch[i]["boxes"].to(device), "labels":batch[i]["labels"].to(device)} for i in range(len(batch))]
   return image, targets
+
 
 def average_dicts(list_of_dicts):
   num_dicts = len(list_of_dicts)
@@ -42,11 +77,13 @@ def average_dicts(list_of_dicts):
           avg_dict[key] = avg_dict.get(key, 0) + value / num_dicts
   return avg_dict
   
+
 def closest_index(lst, target):
     lst = np.array(lst)
     closest_index = np.abs(lst - target).argmin()
     return closest_index
   
+
 def log_transforms(file_path, dataset_name):
     train_list, test_list = ["TRAIN:\n"],["TEST:\n"]
     with open(file_path, 'r') as file:
@@ -87,7 +124,6 @@ def log_transforms(file_path, dataset_name):
     return (train_list, test_list)
 
 
-
 def set_seed(seed):
     """
     Sets seed for all randomized attributes of the packages and modules.
@@ -103,8 +139,6 @@ def set_seed(seed):
     monai.utils.set_determinism(seed=seed)
 
 
-
-
 def NMS_volume(pred_boxes_vol,pred_scores_vol):
     #TODO: Fix hardcoded values
     start_pred = 4 # 5start_pred:end to look for prediction not implemented
@@ -113,7 +147,6 @@ def NMS_volume(pred_boxes_vol,pred_scores_vol):
     min_iou = 0.5 #0.5 #0.75 # minimum iou to look for overlappin boxes.
     min_score_s = 0.0 # minimum score for single predictions 
     depth_d = 4 #1 # division for depth 1= 100%
-
     length = len(pred_boxes_vol)
     final_boxes_vol = []
     final_scores_vol = []
@@ -154,10 +187,6 @@ def NMS_volume(pred_boxes_vol,pred_scores_vol):
     return final_boxes_vol ,final_scores_vol, final_slices_vol
 
 
-
-
-
-
 # detectron2
 class Boxes:
     """
@@ -185,8 +214,8 @@ class Boxes:
             # the inputs (and consequently confuses jit)
             tensor = tensor.reshape((-1, 4)).to(dtype=torch.float32)
         assert tensor.dim() == 2 and tensor.size(-1) == 4, tensor.size()
-
         self.tensor = tensor
+
 
     def clone(self) -> "Boxes":
         """
@@ -197,9 +226,11 @@ class Boxes:
         """
         return Boxes(self.tensor.clone())
 
+
     def to(self, device: torch.device):
         # Boxes are assumed float32 and does not support to(dtype)
         return Boxes(self.tensor.to(device=device))
+
 
     def area(self) -> torch.Tensor:
         """
@@ -211,6 +242,7 @@ class Boxes:
         box = self.tensor
         area = (box[:, 2] - box[:, 0]) * (box[:, 3] - box[:, 1])
         return area
+
 
     def clip(self, box_size: Tuple[int, int]) -> None:
         """
@@ -228,6 +260,7 @@ class Boxes:
         y2 = self.tensor[:, 3].clamp(min=0, max=h)
         self.tensor = torch.stack((x1, y1, x2, y2), dim=-1)
 
+
     def nonempty(self, threshold: float = 0.0) -> torch.Tensor:
         """
         Find boxes that are non-empty.
@@ -243,6 +276,7 @@ class Boxes:
         heights = box[:, 3] - box[:, 1]
         keep = (widths > threshold) & (heights > threshold)
         return keep
+
 
     def __getitem__(self, item) -> "Boxes":
         """
@@ -268,11 +302,14 @@ class Boxes:
         assert b.dim() == 2, "Indexing on Boxes with {} failed to return a matrix!".format(item)
         return Boxes(b)
 
+
     def __len__(self) -> int:
         return self.tensor.shape[0]
 
+
     def __repr__(self) -> str:
         return "Boxes(" + str(self.tensor) + ")"
+
 
     def inside_box(self, box_size: Tuple[int, int], boundary_threshold: int = 0) -> torch.Tensor:
         """
@@ -293,6 +330,7 @@ class Boxes:
         )
         return inds_inside
 
+
     def get_centers(self) -> torch.Tensor:
         """
         Returns:
@@ -300,12 +338,14 @@ class Boxes:
         """
         return (self.tensor[:, :2] + self.tensor[:, 2:]) / 2
 
+
     def scale(self, scale_x: float, scale_y: float) -> None:
         """
         Scale the box with horizontal and vertical scaling factors
         """
         self.tensor[:, 0::2] *= scale_x
         self.tensor[:, 1::2] *= scale_y
+
 
     @classmethod
     def cat(cls, boxes_list: List["Boxes"]) -> "Boxes":
@@ -322,7 +362,6 @@ class Boxes:
         if len(boxes_list) == 0:
             return cls(torch.empty(0))
         assert all([isinstance(box, Boxes) for box in boxes_list])
-
         # use torch.cat (v.s. layers.cat) so the returned boxes never share storage with input
         cat_boxes = cls(torch.cat([b.tensor for b in boxes_list], dim=0))
         return cat_boxes
@@ -331,6 +370,7 @@ class Boxes:
     @property
     def device(self) -> device:
         return self.tensor.device
+    
 
     # type "Iterator[torch.Tensor]", yield, and iter() not supported by torchscript
     # https://github.com/pytorch/pytorch/issues/18627
@@ -358,7 +398,6 @@ def pairwise_intersection(boxes1: Boxes, boxes2: Boxes) -> torch.Tensor:
     width_height = torch.min(boxes1[:, None, 2:], boxes2[:, 2:]) - torch.max(
         boxes1[:, None, :2], boxes2[:, :2]
     )  # [N,M,2]
-
     width_height.clamp_(min=0)  # [N,M,2]
     intersection = width_height.prod(dim=2)  # [N,M]
     return intersection
@@ -379,7 +418,6 @@ def pairwise_iou(boxes1: Boxes, boxes2: Boxes) -> torch.Tensor:
     area1 = boxes1.area()  # [N]
     area2 = boxes2.area()  # [M]
     inter = pairwise_intersection(boxes1, boxes2)
-
     # handle empty boxes
     iou = torch.where(
         inter > 0,

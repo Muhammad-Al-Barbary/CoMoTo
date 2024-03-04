@@ -1,14 +1,12 @@
-from monai.transforms import LoadImage
-from monai.data import Dataset, DataLoader as MonaiLoader
-import os, cv2, torch, numpy as np, natsort, shutil
-from multimodal_breast_analysis.engine.utils import Boxes, NMS_volume
+from multimodal_breast_analysis.engine.utils import prepare_batch 
 
+import os
+import torch
+import numpy as np
 import csv
 import os
 import pandas as pd 
 from tqdm import tqdm 
-
-from multimodal_breast_analysis.engine.utils import prepare_batch 
 import gc
 from sklearn.metrics import roc_curve, auc
 from sklearn.metrics import confusion_matrix
@@ -19,6 +17,7 @@ from monai.apps.detection.metrics.matching import matching_batch
 
 def mammo_final_eval(engine, loader_mode = 'testing'):
     threshold = [0.1]
+    metrics = {}
     if loader_mode=='training':
         dataloader = engine.teacher_trainloader
     elif loader_mode=='validation':
@@ -53,7 +52,7 @@ def mammo_final_eval(engine, loader_mode = 'testing'):
         # Calculate ROC curve
         fpr, tpr, thresholds = roc_curve(targets, predictions)
         roc_auc = auc(fpr, tpr)
-        print("AUC:", roc_auc)
+        metrics['auc'] = roc_auc
         all_thresholds = predictions.copy()
         all_thresholds.sort()
         fpis = []
@@ -82,28 +81,9 @@ def mammo_final_eval(engine, loader_mode = 'testing'):
         sensitivity_at3fpi = sum(sensitivities_at3fpi)/len(sensitivities_at3fpi)
         sensitivity_at4fpi = sum(sensitivities_at4fpi)/len(sensitivities_at4fpi)
         mean_sensitivity = (sensitivity_at1fpi + sensitivity_at2fpi + sensitivity_at3fpi + sensitivity_at4fpi) / 4
-        print("Mean Sensitivity:", mean_sensitivity)
-        print("Sensitivity@2FPI:", sensitivity_at2fpi)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+        metrics['mean_sensitivity'] = mean_sensitivity
+        metrics['sensitivity_@2fps'] = sensitivity_at2fpi
+        return  metrics
 
 def evaluate(
     labels_fp,
@@ -114,21 +94,16 @@ def evaluate(
     df_labels = pd.read_csv(labels_fp)
     df_boxes = pd.read_csv(boxes_fp, dtype={"VolumeSlices": float})
     df_pred = pd.read_csv(predictions_fp, dtype={"Score": float})
-
     df_labels = df_labels.reset_index().set_index(["StudyUID", "View"]).sort_index()
     df_boxes = df_boxes.reset_index().set_index(["StudyUID", "View"]).sort_index()
     df_pred = df_pred.reset_index().set_index(["StudyUID", "View"]).sort_index()
-
     df_pred["TP"] = 0
     df_pred["GTID"] = -1
-
     thresholds = [df_pred["Score"].max() + 1.0]
-
     # find true positive predictions and assign detected ground truth box ID
     for box_pred in df_pred.itertuples():
         if box_pred.Index not in df_boxes.index:
             continue
-
         df_boxes_view = df_boxes.loc[[box_pred.Index]]
         view_slice_offset = df_boxes.loc[[box_pred.Index], "VolumeSlices"].iloc[0] / 4
         tp_boxes = [
@@ -144,9 +119,7 @@ def evaluate(
             tp_i = tp_boxes[0].index
             df_pred.loc[df_pred["index"] == box_pred.index, ("TP", "GTID")] = (1, tp_i)
             thresholds.append(box_pred.Score)
-
     thresholds.append(df_pred["Score"].min() - 1.0)
-
     # compute sensitivity at 2 FPs/volume on all cases
     evaluation_fps_all = (2.0,)
     tpr_all = _froc(
@@ -157,7 +130,6 @@ def evaluate(
         evaluation_fps=evaluation_fps_all,
     )
     result = {f"sensitivity_at_2_fps_all": tpr_all[0]}
-
     # compute mean sensitivity at 1, 2, 3, 4 FPs/volume on positive cases
     df_pred = df_pred[df_pred.index.isin(df_boxes.index)]
     df_labels = df_labels[df_labels.index.isin(df_boxes.index)]
@@ -169,7 +141,6 @@ def evaluate(
         n_boxes=len(df_boxes),
         evaluation_fps=evaluation_fps_positive,
     )
-
     result.update(
         dict(
             (f"sensitivity_at_{int(x)}_fps_positive", y)
@@ -177,7 +148,6 @@ def evaluate(
         )
     )
     result.update({"mean_sensitivity_positive": np.mean(tpr_positive)})
-
     return result
 
 
@@ -212,7 +182,6 @@ def _is_tp(
     pred_y = box_pred.Y + box_pred.Height / 2
     pred_x = box_pred.X + box_pred.Width / 2
     pred_z = box_pred.Z + box_pred.Depth / 2
-
     true_y = (box_true.ymin + box_true.ymax)/2
     true_x = (box_true.xmin + box_true.xmax)/2
     true_z = box_true.Slice
@@ -238,7 +207,6 @@ def _distance(box_pred, box_true) -> float:
     return np.linalg.norm((pred_x - true_x, pred_y - true_y, pred_z - true_z))
 
 
-
 def write_csv (final_boxes_vol, final_scores_vol, final_slices_vol, client, episode, view, total_slices, output_path = 'output_folder/', pred_csv = 'test_results.csv'):
     depth = 0
     rows_to_write = []
@@ -251,15 +219,12 @@ def write_csv (final_boxes_vol, final_scores_vol, final_slices_vol, client, epis
         writer.writerows(rows_to_write)
 
 
-
 def dbt_final_eval(engine, metadata_path = None, output_path = 'output_folder/', pred_csv = 'test_results.csv', target_csv = 'targets.csv', temp_path="pred_temp_folder/"):
     if metadata_path is None: #TODO: Fix this hardcoding
-        # metadata_path = engine.config.data['student_args'][1]
-        metadata_path = "/home/muhammad/multimodal_learning/datasets/dbt/metadata_test.csv"
+        metadata_path = "../datasets/dbt/metadata_test.csv"
     # target csv
         df = pd.read_csv(metadata_path)
     if not os.path.exists(output_path+target_csv):
-    #     # target_df = df[df['PatientID'].isin([engine.student_testloader.dataset[i]['PatientID'] for i in range(len(engine.student_testloader.dataset))])]
         target_df = df
         target_df.to_csv(output_path+target_csv, index=False)
     else:
