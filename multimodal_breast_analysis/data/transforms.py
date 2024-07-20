@@ -16,6 +16,12 @@ from monai.apps.detection.transforms.dictionary import (
 
 
 def train_transforms(dataset_name, configs):
+    """
+    Retrieves a Compose of training transforms based on the dataset and the configurations
+    Args: 
+        dataset_name: String: the name of the desired dataset as defined in the transforms dict inside this function
+        configs: dict: a configuration dict containing transforms parameters
+    """
     resize = configs['size']
     image_key = "image"
     box_key = "boxes"
@@ -87,6 +93,12 @@ def train_transforms(dataset_name, configs):
 
 
 def test_transforms(dataset_name, configs):
+    """
+    Retrieves a Compose of evaluation transforms based on the dataset and the configurations
+    Args: 
+        dataset_name: String: the name of the desired dataset as defined in the transforms dict inside this function
+        configs: dict: a configuration dict containing transforms parameters
+    """
     resize = configs['size']
     image_key = "image"
     box_key = "boxes"

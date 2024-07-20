@@ -6,6 +6,11 @@ from multimodal_breast_analysis.models.backbones import resnet18, resnet34, resn
 
 
 def faster_rcnn(parameters):
+    """
+    Creates a faster_rcnn model with the defined parameters
+    Args:
+        parameters: dict including model paramters
+    """
     backbones = {
         "resnet18" : resnet18,
         "resnet34" : resnet34,
@@ -32,6 +37,12 @@ def faster_rcnn(parameters):
 
 
 def faster_rcnn_fpn(parameters):
+    """
+    Creates a faster_rcnn model with the defined parameters
+    Includes a ResNet50 backbone and a Feature Pyramid Network
+    Args:
+        parameters: dict including model paramters
+    """
     num_classes = parameters["num_classes"]
     weights = parameters["weights"]
     model = fasterrcnn_resnet50_fpn(weights=weights)

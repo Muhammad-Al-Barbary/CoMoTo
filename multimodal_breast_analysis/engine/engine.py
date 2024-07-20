@@ -29,7 +29,15 @@ import numpy as np
 
 
 class Engine:
+    """
+    Implementation of all deep learning tasks
+    """
     def __init__(self, config):
+        """
+        Instantiate all engine components
+        Args:
+            config: dict: configuration object with parameters for each component
+        """
         self.config = config
         set_seed(self.config.seed)
         self.device = torch.device(self.config.device if torch.cuda.is_available() else "cpu")
@@ -142,6 +150,12 @@ class Engine:
     
 
     def save(self, mode, path=None):
+        """
+        Saves model weights
+        Args:
+            mode: string: whether to save the "teacher" or "student"
+            path: string: save location
+        """
         if path is None:
             path = self.config.networks[f"last_{mode}_cp"]
         if mode == 'teacher':
@@ -156,6 +170,12 @@ class Engine:
 
 
     def load(self, mode, path=None):
+        """
+        Loads model weights
+        Args:
+            mode: string: whether to load to the "teacher" or "student"
+            path: string: checkpoint location
+        """
         if path is None:
             path = self.config.networks[f"last_{mode}_cp"]
         if mode == "teacher":
@@ -176,6 +196,9 @@ class Engine:
             
 
     def warmup(self):
+        """
+        Trains the teacher model on the teacher dataset. Should be performed before knowledge distillation.
+        """
         if self.config.train['intra_align']:
             self._instantiate_intra_align()
         warmup_epochs = self.config.train["warmup_epochs"]
@@ -259,6 +282,9 @@ class Engine:
 
 
     def train(self):
+        """
+        Trains the student model, distills knowledge according to the configuration attribute.
+        """
         if self.config.train['distill_mode'] in ["image_level", "object_level"]:
             self._instantiate_kd()
         epochs = self.config.train["epochs"]
@@ -295,7 +321,7 @@ class Engine:
                         self.teacher(teacher_image)
                     teacher_features = self.features['teacher']
                     student_features = self.features['student']
-                    if self.config.train['distill_mode'] == "object_level":
+                    if self.config.train['distill_mode'] == "object_level": #LsKD
                         teacher_boxes = [sample_target['boxes'] for sample_target in teacher_target]
                         teacher_image_size = teacher_image[0].shape
                         teacher_features_selected = extract_critical_features(teacher_features, teacher_boxes, teacher_image_size, num_points = self.config.train['num_points'])
@@ -346,6 +372,12 @@ class Engine:
 
 
     def test(self, mode, loader_mode='validation'):
+        """
+        Evaluates the model
+        Args:
+            mode: string: whether to evaluate the "teacher" or the "student"
+            loader_mode: string: whether to evaluate over the "training", "validation", or "testing" set.
+        """
         if mode == "student":
             if loader_mode=='training':
                 dataloader = self.student_trainloader
@@ -400,6 +432,12 @@ class Engine:
 
 
     def predict(self, path, mode = 'teacher'):
+        """
+        Predicts bounding boxes for a single image.
+        Args:
+            path: string: image path
+            mode: string: whether to use the "teacher" or the "student" for prediction
+        """
         if mode == 'student':
             network = self.student
             transforms = self.student_testloader.dataset.transform
@@ -448,6 +486,14 @@ class Engine:
 
 
     def predict_2dto3d(self, volume_path, mode = 'student', temp_path="pred_temp_folder/"):
+        """
+        Predicts bounding boxes for a whole volume by iterating over the slices
+        followed by applying non-max suppression.
+        Args:
+            volume_path: string: the volume path
+            mode: string: whether to use the "teacher" or the "student" for prediction
+            temp_path: string: a temporary directory to store the slices, deleted after prediction
+        """
         if mode == 'student':
             network = self.student
             transforms = self.student_testloader.dataset.transform

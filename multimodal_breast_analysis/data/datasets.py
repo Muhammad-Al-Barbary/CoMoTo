@@ -1,3 +1,8 @@
+"""
+This module includes the necessary functions for reading the data. 
+If the data paths are different the functions should be modified accordingly.
+Each function should return a dataset list of dicts as well as a list of cases identifiers
+"""
 import os
 import pandas as pd
 import numpy as np

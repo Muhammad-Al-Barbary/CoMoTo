@@ -4,6 +4,11 @@ from multimodal_breast_analysis.models.backbones import resnet18, resnet34, resn
 
 
 def retina_net(parameters):
+    """
+    Creates a retinanet model with the defined parameters
+    Args:
+        parameters: dict including model paramters
+    """
     backbones = {
         "resnet18" : resnet18,
         "resnet34" : resnet34,

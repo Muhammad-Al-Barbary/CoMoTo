@@ -1,3 +1,6 @@
+"""
+Backbones defined in this module should return the raw feature maps
+"""
 from torchvision.models.resnet import ResNet, BasicBlock, ResNet18_Weights, ResNet50_Weights, ResNet101_Weights, ResNet34_Weights, Bottleneck
 from monai.networks.nets.swin_unetr import SwinTransformer
 from monai.utils import ensure_tuple_rep
@@ -56,6 +59,7 @@ def resnet101():
 
 
 def swin_transformer():
+    # TODO: Fix hardcoding
     spatial_dims = 2
     in_chans = 3
     embed_dim = 36

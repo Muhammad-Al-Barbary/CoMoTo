@@ -6,7 +6,17 @@ from random import randint
 import numpy as np
 import pydicom
 
-def visualize_batch(model, images, targets, class_name, figsize=(10,10), threshold = 0.25):
+def visualize_batch(model, images, targets, class_name="", figsize=(10,10), threshold = 0.25):
+    """
+    Visualizes image, target bounding boxes, and predictions.
+    Args:
+        model: the model to be inferred for generating predictions
+        images: list including a batch of images. A random image is visualized from the batch
+        targets: list of target bounding boxes, each element should be a tensor of shape of Nx4
+        class_name: optional class name for boxes labels
+        figsize: the size of the visualized image
+        threshod: thresholds the predictions. By default, boxes with less than 0.25 scores are eliminated.
+    """
     warnings.filterwarnings("ignore") #disable warning for empty boxes
     model.eval()
     predictions = model(images)
@@ -49,6 +59,12 @@ def visualize_batch(model, images, targets, class_name, figsize=(10,10), thresho
 
 
 def visualize_dataset_sample(sample, figsize = (10,10)):
+    """
+    Visualizes image and target bounding boxes.
+    Args:
+        sample: dict containing image and target boxes
+        figsize: the size of the visualized image
+    """
     if sample["image"].split(".")[-1] in ["png", "jpg", "jpeg"]:
         image = plt.imread(sample["image"])
     elif sample["image"].split(".")[-1] == "dcm":

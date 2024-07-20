@@ -1,3 +1,6 @@
+"""
+DBT evaluation script refactored from: https://github.com/mazurowski-lab/duke-dbt-data/blob/master/duke_dbt_data.py
+"""
 from multimodal_breast_analysis.engine.utils import prepare_batch 
 
 import os

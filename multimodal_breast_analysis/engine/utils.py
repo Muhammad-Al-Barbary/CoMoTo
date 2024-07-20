@@ -9,6 +9,18 @@ from torch import device
 
 
 def extract_critical_features(features, boxes, image_size, num_points = 9):
+    """
+    Extracts predetermined points from features maps foreground inside the target bounding boxes
+    Args: 
+        features: tensor: the extracted features maps of shape BxCxAxB
+        boxes: list[tensor]: the target boxes of length B and shape N,4
+        image_size: list: the original image size before downsampling
+        num_points: int: the number of points to extract from the boxes, should 
+                        be a value from 1, 4, 5, or 9 representing the center, edges, 
+                        center + side midpoints, or all of them combined, respectively.
+                        Note: choosing 1 point theoretically eliminate the effect of distillation 
+                              due to the softmax activation of extracted feature points.
+    """
     assert num_points in [1, 4, 5, 9]
     critical_features = torch.zeros((features.shape[0], features.shape[1], num_points), device = features.device)
     scaling_ratio = (features.shape[-1]) / (image_size[-1])
@@ -46,6 +58,15 @@ def extract_critical_features(features, boxes, image_size, num_points = 9):
 
 
 def extract_noncritical_features(features, boxes, image_size, num_points = 9):
+    """
+    Extracts predetermined points from features maps background outside the target bounding boxes
+    Args: 
+        features: tensor: the extracted features maps of shape BxCxAxB
+        boxes: list[tensor]: the target boxes of length B and shape N,4
+        image_size: list: the original image size before downsampling
+        num_points: int: the number of points to extract from the boxes, 
+                         points are randomly sampled from the background.
+    """
     features_selected_negative = []
     scaling_ratio = (features.shape[-1]) / (image_size[-1])
     for i in range(len(boxes)):
@@ -82,6 +103,12 @@ def closest_index(lst, target):
   
 
 def log_transforms(file_path, dataset_name):
+    """
+    Creates a string of the used transforms for documentation purposes
+    Args:
+        filepath: String: the path of the transforms file
+        dataset_name: String: the used dataset
+    """
     train_list, test_list = ["TRAIN:\n"],["TEST:\n"]
     with open(file_path, 'r') as file:
         lines = file.readlines()
@@ -137,6 +164,9 @@ def set_seed(seed):
 
 
 def NMS_volume(pred_boxes_vol,pred_scores_vol):
+    """
+    Source: https://github.com/ICEBERG-VICOROB/DBT_phase2/blob/main/inference_DBT-NMS2.py
+    """
     #TODO: Fix hardcoded values
     start_pred = 4 # 5start_pred:end to look for prediction not implemented
     end_pred = 4 # 5 end_pred to look for prediction not implemented (all slices are used)
@@ -184,7 +214,7 @@ def NMS_volume(pred_boxes_vol,pred_scores_vol):
     return final_boxes_vol ,final_scores_vol, final_slices_vol
 
 
-# detectron2
+# TODO: fix detectron2 import issue instead of copying code
 class Boxes:
     """
     This structure stores a list of boxes as a Nx4 torch.Tensor.
