@@ -16,9 +16,10 @@ pip install -r requirements.txt
 ```
 
 ## Running Framework
-1. add a dataset function to comoto/data/datasets.py
-2. add a configuration json file to comoto/configs
-3. run ```python main.py --config_name configs --mammo``` or ```python main.py --config_name configs --dbt``` to run the training and evaluation code for mammography or DBT
+1. add dataset function to comoto/data/datasets.py
+2. add transforms to comoto/data/transforms.py
+3. add a configuration json file to comoto/configs
+4. run ```python main.py --config_name configs --mammo``` or ```python main.py --config_name configs --dbt``` to run the training and evaluation code for mammography or DBT
 
 ## Results
 Our framework improves performance over alternative methods, especially in low-data setting
